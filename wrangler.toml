@@ -1,0 +1,22 @@
+name = "foodikal-ny-backend"
+main = "src/index.py"
+compatibility_date = "2025-01-07"
+compatibility_flags = ["python_workers"]
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "foodikal_ny_db"
+database_id = "0622155a-1db7-4cc0-b6ce-755cc731ce40"
+
+# Secrets are managed via: wrangler secret put <SECRET_NAME>
+# Required secrets:
+# - TELEGRAM_BOT_TOKEN
+# - TELEGRAM_CHAT_ID
+# - ADMIN_PASSWORD_HASH
+
+[env.production]
+vars = { ENVIRONMENT = "production" }
+
+[env.development]
+vars = { ENVIRONMENT = "development" }
