@@ -2,14 +2,21 @@
 
 ## Base URL
 
-**Production**: `https://foodikal-ny-backend.x-gs-x.workers.dev`
+**Production**: `https://foodikal-ny-cors-wrapper.x-gs-x.workers.dev`
+
+**Important**: Always use the CORS wrapper URL above, not the direct backend URL.
 
 ## CORS Configuration
 
-The API is configured to accept requests from:
-- Origin: `https://ny2026.foodikal.rs`
-- Methods: `GET, POST, OPTIONS`
-- Headers: `Content-Type, Authorization`
+The API is configured to accept requests from these origins:
+- `https://ny2026.foodikal.rs`
+- `https://foodikal.rs`
+
+**Supported Methods**: `GET, POST, PUT, PATCH, DELETE, OPTIONS`
+**Allowed Headers**: `Content-Type, Authorization`
+**Preflight Cache**: 24 hours (86400 seconds)
+
+The CORS wrapper automatically adds proper headers based on your request origin, so you don't need to worry about CORS errors when making requests from the allowed domains.
 
 ## Public Endpoints
 
@@ -21,7 +28,7 @@ Fetch all menu items grouped by category.
 
 **Request**:
 ```javascript
-fetch('https://foodikal-ny-backend.x-gs-x.workers.dev/api/menu')
+fetch('https://foodikal-ny-cors-wrapper.x-gs-x.workers.dev/api/menu')
   .then(response => response.json())
   .then(data => console.log(data));
 ```
@@ -74,14 +81,14 @@ Fetch menu items filtered by a specific category.
 ```javascript
 // For "Горячее" category
 const category = encodeURIComponent('Горячее');
-fetch(`https://foodikal-ny-backend.x-gs-x.workers.dev/api/menu/category/${category}`)
+fetch(`https://foodikal-ny-cors-wrapper.x-gs-x.workers.dev/api/menu/category/${category}`)
   .then(response => response.json())
   .then(data => console.log(data));
 
 // Alternative approach using URLSearchParams
 const params = new URLSearchParams({ category: 'Горячее' });
 const categoryEncoded = params.get('category');
-fetch(`https://foodikal-ny-backend.x-gs-x.workers.dev/api/menu/category/${categoryEncoded}`)
+fetch(`https://foodikal-ny-cors-wrapper.x-gs-x.workers.dev/api/menu/category/${categoryEncoded}`)
   .then(response => response.json())
   .then(data => console.log(data));
 ```
@@ -169,7 +176,7 @@ const orderData = {
   ]
 };
 
-fetch('https://foodikal-ny-backend.x-gs-x.workers.dev/api/create_order', {
+fetch('https://foodikal-ny-cors-wrapper.x-gs-x.workers.dev/api/create_order', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -303,7 +310,7 @@ fetch('/api/menu/category/Горячее');
 ```javascript
 class FoodikalAPI {
   constructor() {
-    this.baseURL = 'https://foodikal-ny-backend.x-gs-x.workers.dev';
+    this.baseURL = 'https://foodikal-ny-cors-wrapper.x-gs-x.workers.dev';
   }
 
   async getMenu() {
@@ -414,10 +421,10 @@ Use browser DevTools or tools like Postman/curl to test:
 curl https://foodikal-ny-backend.x-gs-x.workers.dev/api/menu
 
 # Get category (URL-encoded)
-curl "https://foodikal-ny-backend.x-gs-x.workers.dev/api/menu/category/%D0%93%D0%BE%D1%80%D1%8F%D1%87%D0%B5%D0%B5"
+curl "https://foodikal-ny-cors-wrapper.x-gs-x.workers.dev/api/menu/category/%D0%93%D0%BE%D1%80%D1%8F%D1%87%D0%B5%D0%B5"
 
 # Create order
-curl -X POST https://foodikal-ny-backend.x-gs-x.workers.dev/api/create_order \
+curl -X POST https://foodikal-ny-cors-wrapper.x-gs-x.workers.dev/api/create_order \
   -H "Content-Type: application/json" \
   -d '{
     "customer_name": "Test User",
