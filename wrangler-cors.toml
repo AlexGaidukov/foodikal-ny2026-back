@@ -1,0 +1,8 @@
+name = "foodikal-ny-cors-wrapper"
+main = "cors-wrapper.js"
+compatibility_date = "2025-01-07"
+
+# Service binding to Python worker
+[[services]]
+binding = "PYTHON_WORKER"
+service = "foodikal-ny-backend"

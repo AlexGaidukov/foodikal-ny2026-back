@@ -2,12 +2,35 @@
 Utility functions for Foodikal NY Backend
 """
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from urllib.parse import unquote
 from js import Response as JSResponse
 
 
-def json_response(data: Any, status: int = 200, success: bool = True):
+# Allowed CORS origins
+ALLOWED_ORIGINS = [
+    'https://ny2026.foodikal.rs',
+    'https://foodikal.rs'
+]
+
+
+def get_cors_origin(request_origin: Optional[str] = None) -> str:
+    """
+    Get the appropriate CORS origin based on the request origin
+
+    Args:
+        request_origin: The Origin header from the request
+
+    Returns:
+        The origin to use in Access-Control-Allow-Origin header
+    """
+    if request_origin and request_origin in ALLOWED_ORIGINS:
+        return request_origin
+    # Default to first allowed origin
+    return ALLOWED_ORIGINS[0]
+
+
+def json_response(data: Any, status: int = 200, success: bool = True, origin: str = None):
     """
     Create JSON response with proper headers for Cyrillic support
 
@@ -15,6 +38,7 @@ def json_response(data: Any, status: int = 200, success: bool = True):
         data: Response data (will be wrapped in standard format)
         status: HTTP status code
         success: Success flag
+        origin: Request origin for CORS (optional)
 
     Returns:
         Response object with JSON body
@@ -29,21 +53,25 @@ def json_response(data: Any, status: int = 200, success: bool = True):
         else:
             body = {"success": False, "error": data}
 
+    # Determine CORS origin
+    cors_origin = get_cors_origin(origin)
+
+    # Return response with headers - simple dictionary approach
     return JSResponse.new(
         json.dumps(body, ensure_ascii=False),
         {
             "status": status,
             "headers": {
                 "Content-Type": "application/json; charset=utf-8",
-                "Access-Control-Allow-Origin": "https://ny2026.foodikal.rs",
-                "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+                "Access-Control-Allow-Origin": cors_origin,
+                "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
                 "Access-Control-Allow-Headers": "Content-Type, Authorization"
             }
         }
     )
 
 
-def error_response(error: str, status: int = 400, details: Dict = None):
+def error_response(error: str, status: int = 400, details: Dict = None, origin: str = None):
     """
     Create error response
 
@@ -51,6 +79,7 @@ def error_response(error: str, status: int = 400, details: Dict = None):
         error: Error message
         status: HTTP status code
         details: Optional error details
+        origin: Request origin for CORS (optional)
 
     Returns:
         Response object with error
@@ -63,7 +92,7 @@ def error_response(error: str, status: int = 400, details: Dict = None):
     if details:
         body["details"] = details
 
-    return json_response(body, status=status, success=False)
+    return json_response(body, status=status, success=False, origin=origin)
 
 
 def decode_category(category_encoded: str) -> str:
@@ -216,20 +245,27 @@ def log_event(event_type: str, data: Dict) -> None:
     print(json.dumps(log_entry, ensure_ascii=False))
 
 
-def handle_cors_preflight():
+def handle_cors_preflight(origin: str = None):
     """
     Handle CORS preflight (OPTIONS) requests
+
+    Args:
+        origin: Request origin for CORS (optional)
 
     Returns:
         Response with CORS headers
     """
+    # Determine CORS origin
+    cors_origin = get_cors_origin(origin)
+
+    # Return response with headers - simple dictionary approach
     return JSResponse.new(
         None,
         {
             "status": 204,
             "headers": {
-                "Access-Control-Allow-Origin": "https://ny2026.foodikal.rs",
-                "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+                "Access-Control-Allow-Origin": cors_origin,
+                "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
                 "Access-Control-Allow-Headers": "Content-Type, Authorization",
                 "Access-Control-Max-Age": "86400"
             }
