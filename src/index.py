@@ -125,9 +125,13 @@ async def handle_create_order(request, db: Database, telegram_bot_token: str, te
                                     details={"promo_code": "Invalid promo code"}, origin=origin)
 
             promo_code = data['promo_code']
-            discount_amount = int(original_price * 0.05)  # 5% discount
+            # Calculate 5% discount and round final price to nearest 50 RSD
+            price_after_discount = original_price - int(original_price * 0.05)
+            total_price = round(price_after_discount / 50) * 50
+            discount_amount = original_price - total_price
 
-        total_price = original_price - discount_amount
+        if not promo_code:
+            total_price = original_price
 
         # Prepare order data for database
         # Convert None to empty string for D1 compatibility in Pyodide

@@ -114,12 +114,12 @@ const pattern = /^[A-Za-zА-Яа-яЁё0-9]+$/; // ✅ New - accepts both
 ### Test Promo Code Created:
 - **Code**: `НОВЫЙГОД2026`
 - **Status**: Active in production database
-- **Discount**: 5% (same as all promo codes)
+- **Discount**: 5% with final price rounded to nearest 50 RSD (same as all promo codes)
 
 ### Test Results:
 ✅ **Create Order with Cyrillic Promo**: SUCCESS
 - Promo code: НОВЫЙГОД2026
-- Discount applied: 26 RSD (5% of 520 RSD)
+- Discount applied: 20 RSD (5% of 520 RSD = 494 RSD, rounded to 500 RSD)
 - Order created: ID #18
 
 ✅ **Database Storage**: Cyrillic characters stored and retrieved correctly

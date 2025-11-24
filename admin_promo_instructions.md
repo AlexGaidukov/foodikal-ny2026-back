@@ -217,10 +217,10 @@ The existing `GET /api/admin/order_list` endpoint now returns additional fields 
       "delivery_date": "2025-12-25",
       "comments": "Test order",
       "order_items": [...],
-      "total_price": 494,
+      "total_price": 500,
       "promo_code": "NEWYEAR2026",
       "original_price": 520,
-      "discount_amount": 26,
+      "discount_amount": 20,
       "confirmed_after_creation": false,
       "confirmed_before_delivery": false,
       "created_at": "2025-11-16T12:30:00.000Z",
@@ -233,7 +233,7 @@ The existing `GET /api/admin/order_list` endpoint now returns additional fields 
 **New Fields** (only present when promo code was used):
 - `promo_code` - The promo code that was applied (or empty string `""`)
 - `original_price` - Price before discount (or same as `total_price` if no promo)
-- `discount_amount` - Amount discounted (0 if no promo code)
+- `discount_amount` - Amount discounted (5% discount, then final price rounded to nearest 50 RSD; 0 if no promo code)
 
 ---
 
@@ -627,7 +627,7 @@ await api.delete('NEWYEAR2026');
 
 ## Important Notes
 
-1. **Discount is Fixed**: All promo codes give exactly 5% discount. This is not configurable per code.
+1. **Discount is Fixed**: All promo codes give exactly 5% discount, with final price rounded to nearest 50 RSD. This is not configurable per code.
 2. **No Expiration**: Promo codes don't expire automatically. You must manually delete them.
 3. **Unlimited Uses**: Promo codes can be used unlimited times by different customers.
 4. **No Minimum Order**: Promo codes work on any order amount.

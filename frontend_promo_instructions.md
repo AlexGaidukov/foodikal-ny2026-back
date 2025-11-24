@@ -70,17 +70,17 @@ When a valid promo code is used, the response includes additional discount infor
 {
   "success": true,
   "order_id": 16,
-  "total_price": 494,
+  "total_price": 500,
   "message": "Order created successfully",
   "original_price": 520,
-  "discount_amount": 26,
+  "discount_amount": 20,
   "promo_code": "NEWYEAR2026"
 }
 ```
 
 **New Fields** (only present when promo code is applied):
 - `original_price`: Price before discount
-- `discount_amount`: Amount discounted (5% of original price)
+- `discount_amount`: Amount discounted (5% discount, then final price rounded to nearest 50 RSD)
 - `promo_code`: The promo code that was applied
 
 ### Success Response (without promo code)
@@ -138,13 +138,13 @@ Add an optional promo code input field to your order form. Recommended placement
 │  │ ┌─────────────────┬────────────┐     │  │
 │  │ │ Enter code      │ [Apply]    │     │  │
 │  │ └─────────────────┴────────────┘     │  │
-│  │ ✅ Promo code applied: -26 RSD       │  │
+│  │ ✅ Promo code applied: -20 RSD       │  │
 │  └──────────────────────────────────────┘  │
 │                                             │
 │  Subtotal:        520 RSD                   │
-│  Discount (5%):   -26 RSD                   │
+│  Discount (5%):   -20 RSD                   │
 │  ────────────────────────                   │
-│  Total:           494 RSD                   │
+│  Total:           500 RSD                   │
 │                                             │
 │  [Place Order]                              │
 └─────────────────────────────────────────────┘
@@ -560,9 +560,9 @@ Always show the breakdown when promo is applied:
 
 ```
 Subtotal:        520 RSD
-Discount (5%):   -26 RSD
+Discount (5%):   -20 RSD
 ─────────────────────
-Total:           494 RSD
+Total:           500 RSD
 ```
 
 ### 4. Mobile Considerations
@@ -747,10 +747,12 @@ if (!validation.valid) {
 ## Important Notes
 
 ### Discount Calculation
-- Discount is **always 5%** of the subtotal
-- Calculation: `discount = floor(subtotal * 0.05)`
-- Uses integer math (no decimal places)
-- Example: 520 RSD → 26 RSD discount (5%)
+- Discount is **always 5%** of the subtotal, with final price rounded to nearest 50 RSD
+- Calculation steps:
+  1. Apply 5% discount: `subtotal - floor(subtotal * 0.05)`
+  2. Round result to nearest 50: `round(result / 50) * 50`
+  3. Actual discount: `subtotal - rounded_price`
+- Example: 520 RSD → 494 RSD (5% off) → **500 RSD (rounded)** → actual discount: 20 RSD
 
 ### Cyrillic Character Support
 - Promo codes fully support **Cyrillic characters** (Russian/Serbian letters)
