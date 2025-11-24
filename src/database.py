@@ -168,19 +168,23 @@ class Database:
         try:
             stmt = self.db.prepare("""
                 INSERT INTO orders (
-                    customer_name, customer_contact, customer_email,
-                    delivery_address, comments, order_items, total_price
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    customer_name, customer_contact,
+                    delivery_address, delivery_date, comments, order_items, total_price,
+                    promo_code, original_price, discount_amount
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)
 
             result = await stmt.bind(
                 order_data['customer_name'],
                 order_data['customer_contact'],
-                order_data['customer_email'],
                 order_data['delivery_address'],
+                order_data['delivery_date'],
                 order_data['comments'],
                 json.dumps(order_data['order_items'], ensure_ascii=False),
-                order_data['total_price']
+                order_data['total_price'],
+                order_data.get('promo_code') or '',
+                order_data.get('original_price') or order_data['total_price'],
+                order_data.get('discount_amount', 0)
             ).run()
 
             # Get the last inserted row ID
@@ -199,8 +203,9 @@ class Database:
         """
         try:
             stmt = self.db.prepare("""
-                SELECT id, customer_name, customer_contact, customer_email,
-                       delivery_address, comments, order_items, total_price,
+                SELECT id, customer_name, customer_contact,
+                       delivery_address, delivery_date, comments, order_items, total_price,
+                       promo_code, original_price, discount_amount,
                        confirmed_after_creation, confirmed_before_delivery,
                        created_at, updated_at
                 FROM orders
@@ -235,8 +240,9 @@ class Database:
         """
         try:
             stmt = self.db.prepare("""
-                SELECT id, customer_name, customer_contact, customer_email,
-                       delivery_address, comments, order_items, total_price,
+                SELECT id, customer_name, customer_contact,
+                       delivery_address, delivery_date, comments, order_items, total_price,
+                       promo_code, original_price, discount_amount,
                        confirmed_after_creation, confirmed_before_delivery,
                        created_at, updated_at
                 FROM orders
@@ -424,3 +430,82 @@ class Database:
         except Exception as e:
             print(f"Database error in delete_menu_item: {str(e)}")
             raise DatabaseError(f"Failed to delete menu item {item_id}")
+
+    async def create_promo_code(self, code: str) -> bool:
+        """
+        Create a new promo code
+
+        Args:
+            code: Promo code string
+
+        Returns:
+            True if created successfully
+        """
+        try:
+            stmt = self.db.prepare("INSERT INTO promo_codes (code) VALUES (?)")
+            await stmt.bind(code).run()
+            return True
+        except Exception as e:
+            print(f"Database error in create_promo_code: {str(e)}")
+            raise DatabaseError("Failed to create promo code")
+
+    async def get_promo_codes(self) -> List[Dict]:
+        """
+        Fetch all promo codes
+
+        Returns:
+            List of promo codes
+        """
+        try:
+            stmt = self.db.prepare("SELECT code, created_at FROM promo_codes ORDER BY created_at DESC")
+            result = await stmt.all()
+            return extract_results(result)
+        except Exception as e:
+            print(f"Database error in get_promo_codes: {str(e)}")
+            raise DatabaseError("Failed to fetch promo codes")
+
+    async def get_promo_code_by_code(self, code: str) -> Optional[Dict]:
+        """
+        Fetch a single promo code by code
+
+        Args:
+            code: Promo code string
+
+        Returns:
+            Promo code dictionary or None if not found
+        """
+        try:
+            stmt = self.db.prepare("SELECT code, created_at FROM promo_codes WHERE code = ?")
+            result = await stmt.bind(code).first()
+
+            if not result:
+                return None
+
+            # Convert JS object to Python dict
+            if hasattr(result, 'to_py'):
+                return result.to_py()
+            elif hasattr(result, '_obj'):
+                return dict(result)
+            else:
+                return result
+        except Exception as e:
+            print(f"Database error in get_promo_code_by_code: {str(e)}")
+            raise DatabaseError(f"Failed to fetch promo code {code}")
+
+    async def delete_promo_code(self, code: str) -> bool:
+        """
+        Delete a promo code
+
+        Args:
+            code: Promo code string
+
+        Returns:
+            True if deleted successfully
+        """
+        try:
+            stmt = self.db.prepare("DELETE FROM promo_codes WHERE code = ?")
+            await stmt.bind(code).run()
+            return True
+        except Exception as e:
+            print(f"Database error in delete_promo_code: {str(e)}")
+            raise DatabaseError(f"Failed to delete promo code {code}")

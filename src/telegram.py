@@ -48,18 +48,21 @@ class TelegramNotifier:
         message = f"""🍽 **Новый заказ #{order['id']}**
 
 👤 Имя: {order['customer_name']}
-📞 Контакт: {order['customer_contact']}"""
-
-        if order.get('customer_email'):
-            message += f"\n📧 Email: {order['customer_email']}"
-
-        message += f"""
+📞 Контакт: {order['customer_contact']}
 📍 Адрес доставки: {order['delivery_address']}
+📅 Дата доставки: {order.get('delivery_date', 'Не указана')}
 
 📦 Товары:
 {items_str}
+"""
 
-💰 Итого: {order['total_price']} RSD"""
+        # Add promo code info if applied
+        if order.get('promo_code'):
+            message += f"\n🎟 Промокод: {order['promo_code']}"
+            message += f"\n💵 Исходная цена: {order.get('original_price', order['total_price'])} RSD"
+            message += f"\n🎁 Скидка: -{order.get('discount_amount', 0)} RSD"
+
+        message += f"\n💰 Итого: {order['total_price']} RSD"
 
         if order.get('comments'):
             message += f"\n\n💬 Комментарии: {order['comments']}"

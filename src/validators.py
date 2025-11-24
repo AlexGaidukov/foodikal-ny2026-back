@@ -3,6 +3,7 @@ Input validation module for Foodikal NY Backend
 """
 import re
 from typing import Dict, List, Tuple, Optional
+from datetime import datetime, timedelta
 
 
 class ValidationError(Exception):
@@ -15,6 +16,23 @@ class ValidationError(Exception):
 
 class OrderValidator:
     """Validator for order-related data"""
+
+    @staticmethod
+    def validate_promo_code(code: Optional[str]) -> bool:
+        """
+        Validate promo code format
+        Returns True if valid or if code is None/empty (optional field)
+        Allows Latin letters, Cyrillic letters, and numbers
+        """
+        if not code:
+            return True
+        # Length check: 3-20 characters
+        if len(code) < 3 or len(code) > 20:
+            return False
+        # Allow Latin letters (A-Z, a-z), Cyrillic letters (А-Я, а-я, Ё, ё), and numbers (0-9)
+        # Pattern allows alphanumeric in both Latin and Cyrillic
+        pattern = r'^[A-Za-zА-Яа-яЁё0-9]+$'
+        return bool(re.match(pattern, code))
 
     @staticmethod
     def validate_email(email: Optional[str]) -> bool:
@@ -30,12 +48,45 @@ class OrderValidator:
     @staticmethod
     def validate_phone(phone: str) -> bool:
         """
-        Validate phone or Telegram handle format
-        Accepts: +381641234567 or @telegram_handle
+        Validate contact field
+        Accepts any format with minimum 3 characters
         """
-        if not phone or len(phone) < 5:
+        if not phone or len(phone) < 3:
             return False
-        return phone.startswith('+') or phone.startswith('@')
+        return True
+
+    @staticmethod
+    def validate_delivery_date(date_str: str) -> Tuple[bool, str]:
+        """
+        Validate delivery date
+        - Must be in YYYY-MM-DD format
+        - Must be today or in the future
+        - Must be within 90 days from now
+
+        Returns: (is_valid, error_message)
+        """
+        if not date_str:
+            return False, "Delivery date is required"
+
+        # Validate format
+        try:
+            delivery_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return False, "Invalid date format. Use YYYY-MM-DD (e.g., 2025-12-31)"
+
+        # Get today's date
+        today = datetime.utcnow().date()
+
+        # Check if date is not in the past
+        if delivery_date < today:
+            return False, "Delivery date cannot be in the past"
+
+        # Check if date is within 90 days
+        max_date = today + timedelta(days=90)
+        if delivery_date > max_date:
+            return False, "Delivery date must be within 90 days from today"
+
+        return True, ""
 
     @staticmethod
     def validate_order_items(items: List[Dict]) -> Tuple[bool, str]:
@@ -79,10 +130,17 @@ class OrderValidator:
         if not data.get('customer_contact'):
             errors['customer_contact'] = "Customer contact is required"
         elif not OrderValidator.validate_phone(data['customer_contact']):
-            errors['customer_contact'] = "Invalid phone format (use +381... or @username)"
+            errors['customer_contact'] = "Customer contact must be at least 3 characters"
 
         if not data.get('delivery_address'):
             errors['delivery_address'] = "Delivery address is required"
+
+        if not data.get('delivery_date'):
+            errors['delivery_date'] = "Delivery date is required"
+        else:
+            is_valid, msg = OrderValidator.validate_delivery_date(data['delivery_date'])
+            if not is_valid:
+                errors['delivery_date'] = msg
 
         if not data.get('order_items'):
             errors['order_items'] = "Order items are required"
@@ -92,9 +150,6 @@ class OrderValidator:
                 errors['order_items'] = msg
 
         # Optional fields validation
-        if data.get('customer_email') and not OrderValidator.validate_email(data['customer_email']):
-            errors['customer_email'] = "Invalid email format"
-
         if data.get('comments') and len(data['comments']) > 500:
             errors['comments'] = "Comments must not exceed 500 characters"
 
@@ -148,6 +203,26 @@ class MenuValidator:
 
             if 'price' in data and (not isinstance(data['price'], int) or data['price'] < 0):
                 errors['price'] = "Price must be a non-negative integer"
+
+        return len(errors) == 0, errors
+
+
+class PromoCodeValidator:
+    """Validator for promo code-related data"""
+
+    @staticmethod
+    def validate_promo_code_data(data: Dict) -> Tuple[bool, Dict]:
+        """
+        Validate promo code data for creation
+        Returns: (is_valid, error_details)
+        """
+        errors = {}
+
+        # Required field
+        if not data.get('code'):
+            errors['code'] = "Promo code is required"
+        elif not OrderValidator.validate_promo_code(data['code']):
+            errors['code'] = "Promo code must be alphanumeric (Latin/Cyrillic letters and numbers) and 3-20 characters long"
 
         return len(errors) == 0, errors
 

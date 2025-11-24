@@ -10,6 +10,11 @@ const ALLOWED_ORIGINS = [
 ];
 
 function getCorsOrigin(requestOrigin) {
+  // Allow null origin for local file testing (file:// protocol)
+  if (requestOrigin === 'null') {
+    return '*';
+  }
+
   if (requestOrigin && ALLOWED_ORIGINS.includes(requestOrigin)) {
     return requestOrigin;
   }
@@ -65,7 +70,18 @@ export default {
       return addCorsHeaders(response, origin);
     } catch (error) {
       console.error('Proxy error:', error);
-      return new Response('Gateway Error: ' + error.message, { status: 502 });
+
+      // Create error response with CORS headers
+      const corsOrigin = getCorsOrigin(origin);
+      return new Response('Gateway Error: ' + error.message, {
+        status: 502,
+        headers: {
+          'Access-Control-Allow-Origin': corsOrigin,
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Content-Type': 'text/plain'
+        }
+      });
     }
   }
 };

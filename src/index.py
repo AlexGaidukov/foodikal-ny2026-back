@@ -7,7 +7,7 @@ import asyncio
 
 from database import Database, DatabaseError
 from auth import authenticate_request, AuthenticationError
-from validators import OrderValidator, MenuValidator, ValidationError
+from validators import OrderValidator, MenuValidator, PromoCodeValidator, ValidationError
 from telegram import create_notifier
 from utils import (
     json_response,
@@ -103,22 +103,45 @@ async def handle_create_order(request, db: Database, telegram_bot_token: str, te
         # Create lookup dictionary
         menu_dict = {item['id']: item for item in menu_items}
 
-        # Calculate total price from database prices
+        # Calculate original price from database prices
         try:
-            enriched_items, total_price = calculate_order_total(data['order_items'], menu_dict)
+            enriched_items, original_price = calculate_order_total(data['order_items'], menu_dict)
         except ValueError as e:
             return error_response(str(e), 404, origin=origin)
+
+        # Apply promo code discount if provided
+        promo_code = None
+        discount_amount = 0
+
+        if data.get('promo_code'):
+            # Validate promo code format
+            if not OrderValidator.validate_promo_code(data['promo_code']):
+                return error_response("Invalid promo code format", 400, origin=origin)
+
+            # Check if promo code exists in database
+            promo = await db.get_promo_code_by_code(data['promo_code'])
+            if not promo:
+                return error_response("Promo code not found", 400,
+                                    details={"promo_code": "Invalid promo code"}, origin=origin)
+
+            promo_code = data['promo_code']
+            discount_amount = int(original_price * 0.05)  # 5% discount
+
+        total_price = original_price - discount_amount
 
         # Prepare order data for database
         # Convert None to empty string for D1 compatibility in Pyodide
         order_data = {
             'customer_name': data['customer_name'],
             'customer_contact': data['customer_contact'],
-            'customer_email': data.get('customer_email') or '',
             'delivery_address': data['delivery_address'],
+            'delivery_date': data['delivery_date'],
             'comments': data.get('comments') or '',
             'order_items': enriched_items,
-            'total_price': total_price
+            'total_price': total_price,
+            'promo_code': promo_code,
+            'original_price': original_price,
+            'discount_amount': discount_amount
         }
 
         # Save order to database
@@ -145,12 +168,19 @@ async def handle_create_order(request, db: Database, telegram_bot_token: str, te
         })
 
         # Return success response
-        return json_response({
+        response_data = {
             "success": True,
             "order_id": order_id,
             "total_price": total_price,
             "message": "Order created successfully"
-        }, status=201, origin=origin)
+        }
+
+        if promo_code:
+            response_data["original_price"] = original_price
+            response_data["discount_amount"] = discount_amount
+            response_data["promo_code"] = promo_code
+
+        return json_response(response_data, status=201, origin=origin)
 
     except ValidationError as e:
         return error_response(e.message, 400, details=e.details, origin=origin)
@@ -354,6 +384,90 @@ async def handle_delete_menu_item(db: Database, item_id: int, origin: str = None
         return error_response("Failed to delete menu item", 500, origin=origin)
 
 
+async def handle_get_promo_codes(db: Database, origin: str = None) -> Response:
+    """
+    GET /api/admin/promo_codes
+    List all promo codes (admin only)
+    """
+    try:
+        promo_codes = await db.get_promo_codes()
+
+        return json_response({
+            "success": True,
+            "count": len(promo_codes),
+            "promo_codes": promo_codes
+        }, origin=origin)
+
+    except DatabaseError as e:
+        log_event("database_error", {"endpoint": "/api/admin/promo_codes", "error": str(e)})
+        return error_response("Failed to fetch promo codes", 500, origin=origin)
+
+
+async def handle_create_promo_code(request, db: Database, origin: str = None) -> Response:
+    """
+    POST /api/admin/promo_codes
+    Create new promo code (admin only)
+    """
+    try:
+        # Parse request body
+        try:
+            data = await parse_request_body(request)
+        except ValueError as e:
+            return error_response(str(e), 400, origin=origin)
+
+        # Validate promo code data
+        is_valid, errors = PromoCodeValidator.validate_promo_code_data(data)
+        if not is_valid:
+            return error_response("Invalid promo code data", 400, details=errors, origin=origin)
+
+        # Check if promo code already exists
+        existing = await db.get_promo_code_by_code(data['code'])
+        if existing:
+            return error_response("Promo code already exists", 400,
+                                details={"code": "Promo code already exists"}, origin=origin)
+
+        # Create promo code
+        await db.create_promo_code(data['code'])
+
+        log_event("promo_code_created", {"code": data['code']})
+
+        return json_response({
+            "success": True,
+            "code": data['code'],
+            "message": "Promo code created successfully"
+        }, status=201, origin=origin)
+
+    except DatabaseError as e:
+        log_event("database_error", {"endpoint": "/api/admin/promo_codes", "error": str(e)})
+        return error_response("Failed to create promo code", 500, origin=origin)
+
+
+async def handle_delete_promo_code(db: Database, code: str, origin: str = None) -> Response:
+    """
+    DELETE /api/admin/promo_codes/:code
+    Delete promo code (admin only)
+    """
+    try:
+        # Check if promo code exists
+        promo = await db.get_promo_code_by_code(code)
+        if not promo:
+            return error_response("Promo code not found", 404, origin=origin)
+
+        # Delete promo code
+        await db.delete_promo_code(code)
+
+        log_event("promo_code_deleted", {"code": code})
+
+        return json_response({
+            "success": True,
+            "message": "Promo code deleted successfully"
+        }, origin=origin)
+
+    except DatabaseError as e:
+        log_event("database_error", {"endpoint": "/api/admin/promo_codes/:code", "error": str(e)})
+        return error_response("Failed to delete promo code", 500, origin=origin)
+
+
 async def route_request(request, env) -> Response:
     """
     Main request router
@@ -443,6 +557,17 @@ async def route_request(request, env) -> Response:
             return await handle_delete_menu_item(db, item_id, origin)
         except ValueError:
             return error_response("Invalid menu item ID", 400, origin=origin)
+
+    # Admin: Promo Code management
+    if method == "GET" and url.endswith("/api/admin/promo_codes"):
+        return await handle_get_promo_codes(db, origin)
+
+    if method == "POST" and url.endswith("/api/admin/promo_codes"):
+        return await handle_create_promo_code(request, db, origin)
+
+    if method == "DELETE" and "/api/admin/promo_codes/" in url:
+        code = extract_path_param(url, "/api/admin/promo_codes/", "code")
+        return await handle_delete_promo_code(db, code, origin)
 
     # No route matched
     return error_response("Not found", 404, origin=origin)

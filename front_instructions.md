@@ -146,8 +146,8 @@ Content-Type: application/json
 {
   "customer_name": "Иван Иванов",
   "customer_contact": "+1234567890",
-  "customer_email": "ivan@example.com",
   "delivery_address": "Нью-Йорк, улица Тест, 123",
+  "delivery_date": "2025-12-25",
   "comments": "Позвонить за 30 минут",
   "order_items": [
     {
@@ -167,8 +167,8 @@ Content-Type: application/json
 const orderData = {
   customer_name: "Иван Иванов",
   customer_contact: "+1234567890",
-  customer_email: "ivan@example.com",  // Optional
   delivery_address: "Нью-Йорк, улица Тест, 123",
+  delivery_date: "2025-12-25",         // YYYY-MM-DD format
   comments: "Позвонить за 30 минут",   // Optional
   order_items: [
     { item_id: 1, quantity: 2 },
@@ -191,14 +191,14 @@ fetch('https://foodikal-ny-cors-wrapper.x-gs-x.workers.dev/api/create_order', {
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `customer_name` | ✅ Yes | string | Customer full name (2-100 chars) |
-| `customer_contact` | ✅ Yes | string | Phone number (10-20 chars) |
-| `customer_email` | ❌ No | string | Email address |
-| `delivery_address` | ✅ Yes | string | Full delivery address (5-200 chars) |
-| `comments` | ❌ No | string | Order comments/notes |
-| `order_items` | ✅ Yes | array | Array of items (1-50 items) |
+| `customer_name` | ✅ Yes | string | Customer full name |
+| `customer_contact` | ✅ Yes | string | Contact information (min 3 chars) |
+| `delivery_address` | ✅ Yes | string | Full delivery address |
+| `delivery_date` | ✅ Yes | string | Delivery date in YYYY-MM-DD format (today or future, within 90 days) |
+| `comments` | ❌ No | string | Order comments/notes (max 500 chars) |
+| `order_items` | ✅ Yes | array | Array of items (1-20 items) |
 | `order_items[].item_id` | ✅ Yes | integer | Menu item ID |
-| `order_items[].quantity` | ✅ Yes | integer | Quantity (1-100) |
+| `order_items[].quantity` | ✅ Yes | integer | Quantity (1-50) |
 
 **Response** (200 OK):
 ```json
@@ -214,7 +214,6 @@ fetch('https://foodikal-ny-cors-wrapper.x-gs-x.workers.dev/api/create_order', {
 - **Prices are calculated server-side** - do not send price from frontend
 - Total price is calculated from database prices (security feature)
 - Telegram notification is automatically sent to manager
-- Empty strings for optional fields are acceptable
 
 **Validation Error Response** (400 Bad Request):
 ```json
@@ -392,8 +391,8 @@ api.getMenuByCategory('Горячее')
 const order = {
   customer_name: "Иван Иванов",
   customer_contact: "+1234567890",
-  customer_email: "ivan@example.com",
   delivery_address: "Нью-Йорк, улица Тест, 123",
+  delivery_date: "2025-12-25",
   comments: "Позвонить за 30 минут",
   order_items: [
     { item_id: 1, quantity: 2 },
@@ -430,6 +429,7 @@ curl -X POST https://foodikal-ny-cors-wrapper.x-gs-x.workers.dev/api/create_orde
     "customer_name": "Test User",
     "customer_contact": "+1234567890",
     "delivery_address": "Test Address 123",
+    "delivery_date": "2025-12-25",
     "order_items": [{"item_id": 1, "quantity": 2}]
   }'
 ```

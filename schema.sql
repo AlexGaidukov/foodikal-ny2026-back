@@ -17,15 +17,24 @@ CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     customer_name TEXT NOT NULL,
     customer_contact TEXT NOT NULL,
-    customer_email TEXT,
     delivery_address TEXT NOT NULL,
+    delivery_date TEXT NOT NULL,
     comments TEXT,
     order_items TEXT NOT NULL,
     total_price INTEGER NOT NULL,
+    promo_code TEXT,
+    original_price INTEGER,
+    discount_amount INTEGER DEFAULT 0,
     confirmed_after_creation BOOLEAN DEFAULT 0,
     confirmed_before_delivery BOOLEAN DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table 3: Promo Codes
+CREATE TABLE IF NOT EXISTS promo_codes (
+    code TEXT PRIMARY KEY,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Indexes for better query performance
