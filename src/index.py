@@ -198,6 +198,69 @@ async def handle_create_order(request, db: Database, telegram_bot_token: str, te
         return error_response("Internal server error", 500, origin=origin)
 
 
+async def handle_validate_promo(request, db: Database, origin: str = None) -> Response:
+    """
+    POST /api/validate_promo
+    Validate promo code and calculate discount (public endpoint)
+    """
+    try:
+        # Parse request body
+        try:
+            data = await parse_request_body(request)
+        except ValueError as e:
+            return error_response(str(e), 400, origin=origin)
+
+        # Validate request data
+        is_valid, errors = PromoCodeValidator.validate_promo_validation_request(data)
+        if not is_valid:
+            return error_response("Invalid request data", 400, details=errors, origin=origin)
+
+        # Fetch all menu items
+        menu_items = await db.get_menu_items()
+        if not menu_items:
+            return error_response("Menu is empty", 400, origin=origin)
+
+        # Create lookup dictionary
+        menu_dict = {item['id']: item for item in menu_items}
+
+        # Calculate subtotal from database prices
+        try:
+            enriched_items, subtotal = calculate_order_total(data['order_items'], menu_dict)
+        except ValueError as e:
+            return error_response(str(e), 404, origin=origin)
+
+        # Check if promo code exists in database
+        promo = await db.get_promo_code_by_code(data['promo_code'])
+        if not promo:
+            return json_response({
+                "success": True,
+                "valid": False,
+                "error": "Промокод не найден"
+            }, origin=origin)
+
+        # Calculate discount with rounding
+        price_after_discount = subtotal - int(subtotal * 0.05)
+        final_total = round(price_after_discount / 50) * 50
+        discount_amount = subtotal - final_total
+
+        # Return success with pricing details
+        return json_response({
+            "success": True,
+            "valid": True,
+            "subtotal": subtotal,
+            "discount_amount": discount_amount,
+            "final_total": final_total
+        }, origin=origin)
+
+    except DatabaseError as e:
+        log_event("database_error", {"endpoint": "/api/validate_promo", "error": str(e)})
+        return error_response("Failed to validate promo code", 500, origin=origin)
+
+    except Exception as e:
+        log_event("unexpected_error", {"endpoint": "/api/validate_promo", "error": str(e)})
+        return error_response("Internal server error", 500, origin=origin)
+
+
 async def handle_get_orders(db: Database, origin: str = None) -> Response:
     """
     GET /api/admin/order_list
@@ -509,6 +572,9 @@ async def route_request(request, env) -> Response:
             environment,
             origin
         )
+
+    if method == "POST" and url.endswith("/api/validate_promo"):
+        return await handle_validate_promo(request, db, origin)
 
     # Admin endpoints - require authentication
     auth_header = request.headers.get("Authorization")

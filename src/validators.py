@@ -226,6 +226,30 @@ class PromoCodeValidator:
 
         return len(errors) == 0, errors
 
+    @staticmethod
+    def validate_promo_validation_request(data: Dict) -> Tuple[bool, Dict]:
+        """
+        Validate promo code validation request
+        Returns: (is_valid, error_details)
+        """
+        errors = {}
+
+        # Required field: promo_code
+        if not data.get('promo_code'):
+            errors['promo_code'] = "Promo code is required"
+        elif not OrderValidator.validate_promo_code(data['promo_code']):
+            errors['promo_code'] = "Invalid promo code format"
+
+        # Required field: order_items
+        if not data.get('order_items'):
+            errors['order_items'] = "Order items are required"
+        else:
+            is_valid, msg = OrderValidator.validate_order_items(data['order_items'])
+            if not is_valid:
+                errors['order_items'] = msg
+
+        return len(errors) == 0, errors
+
 
 def sanitize_string(value: str, max_length: Optional[int] = None) -> str:
     """
