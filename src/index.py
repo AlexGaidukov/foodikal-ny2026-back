@@ -9,6 +9,7 @@ from database import Database, DatabaseError
 from auth import authenticate_request, AuthenticationError
 from validators import OrderValidator, MenuValidator, PromoCodeValidator, ValidationError
 from telegram import create_notifier
+from rate_limiter import RateLimiter
 from utils import (
     json_response,
     error_response,
@@ -546,6 +547,12 @@ async def route_request(request, env) -> Response:
     # Initialize database
     db = Database(env.DB)
 
+    # Initialize rate limiter
+    rate_limiter = RateLimiter(getattr(env, 'RATE_LIMIT_KV', None))
+
+    # Get client IP address
+    client_ip = request.headers.get('CF-Connecting-IP', 'unknown')
+
     # Get environment
     environment = getattr(env, 'ENVIRONMENT', 'production')
 
@@ -558,13 +565,43 @@ async def route_request(request, env) -> Response:
 
     # Public endpoints
     if method == "GET" and "/api/menu/category/" in url:
+        # Rate limit check for menu API
+        is_allowed, retry_after = await rate_limiter.check_public_api_rate_limit(client_ip)
+        if not is_allowed:
+            return error_response(
+                "Too many requests. Please try again later.",
+                429,
+                details={"retry_after": retry_after},
+                origin=origin
+            )
+
         category = extract_path_param(url, "/api/menu/category/", "category")
         return await handle_get_menu_by_category(db, category, origin)
 
     if method == "GET" and url.endswith("/api/menu"):
+        # Rate limit check for menu API
+        is_allowed, retry_after = await rate_limiter.check_public_api_rate_limit(client_ip)
+        if not is_allowed:
+            return error_response(
+                "Too many requests. Please try again later.",
+                429,
+                details={"retry_after": retry_after},
+                origin=origin
+            )
+
         return await handle_get_menu(db, origin)
 
     if method == "POST" and url.endswith("/api/create_order"):
+        # Rate limit check for order creation
+        is_allowed, retry_after = await rate_limiter.check_order_creation_rate_limit(client_ip)
+        if not is_allowed:
+            return error_response(
+                "Too many order attempts. Please try again later.",
+                429,
+                details={"retry_after": retry_after},
+                origin=origin
+            )
+
         return await handle_create_order(
             request, db,
             env.TELEGRAM_BOT_TOKEN,
@@ -574,6 +611,16 @@ async def route_request(request, env) -> Response:
         )
 
     if method == "POST" and url.endswith("/api/validate_promo"):
+        # Rate limit check for promo validation
+        is_allowed, retry_after = await rate_limiter.check_promo_validation_rate_limit(client_ip)
+        if not is_allowed:
+            return error_response(
+                "Too many validation attempts. Please try again later.",
+                429,
+                details={"retry_after": retry_after},
+                origin=origin
+            )
+
         return await handle_validate_promo(request, db, origin)
 
     # Admin endpoints - require authentication
@@ -582,9 +629,27 @@ async def route_request(request, env) -> Response:
     # Check authentication for admin endpoints
     if "/api/admin/" in url:
         if not authenticate_request(auth_header, env.ADMIN_PASSWORD_HASH):
+            # Record failed authentication attempt and check if rate limited
+            is_allowed, retry_after = await rate_limiter.record_failed_auth(client_ip)
+
+            if not is_allowed:
+                # Too many failed attempts - rate limit exceeded
+                log_event("rate_limit_exceeded", {
+                    "endpoint": url,
+                    "ip": client_ip,
+                    "retry_after": retry_after,
+                    "reason": "too_many_failed_auth"
+                })
+                return error_response(
+                    "Too many failed authentication attempts. Please try again later.",
+                    429,
+                    details={"retry_after": retry_after},
+                    origin=origin
+                )
+
             log_event("auth_failed", {
                 "endpoint": url,
-                "ip": request.headers.get('CF-Connecting-IP', 'unknown')
+                "ip": client_ip
             })
             return error_response("Unauthorized", 401, origin=origin)
 

@@ -9,6 +9,12 @@ binding = "DB"
 database_name = "foodikal_ny_db"
 database_id = "0622155a-1db7-4cc0-b6ce-755cc731ce40"
 
+# KV Namespace for rate limiting
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "73445e5e5c454de99b72ab06b6b2d864"
+preview_id = "d452503f49be47ac85b6a1e026fdbdf5"
+
 # Secrets are managed via: wrangler secret put <SECRET_NAME>
 # Required secrets:
 # - TELEGRAM_BOT_TOKEN
