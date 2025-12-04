@@ -1,0 +1,19 @@
+{
+  "name": "foodikal-ny-backend",
+  "version": "1.0.0",
+  "description": "Foodikal NY Backend - Cloudflare Workers",
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "deploy:cors": "wrangler deploy -c wrangler-cors.toml",
+    "deploy:excel": "wrangler deploy -c wrangler-excel.toml",
+    "dev": "wrangler dev",
+    "dev:excel": "wrangler dev -c wrangler-excel.toml"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.46.0"
+  }
+}

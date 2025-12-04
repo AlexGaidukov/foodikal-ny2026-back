@@ -1,0 +1,4 @@
+name = "foodikal-ny-excel-generator"
+main = "excel-generator-v2.js"
+compatibility_date = "2025-01-07"
+compatibility_flags = ["nodejs_compat"]
