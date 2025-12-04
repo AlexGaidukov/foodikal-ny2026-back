@@ -509,3 +509,186 @@ class Database:
         except Exception as e:
             print(f"Database error in delete_promo_code: {str(e)}")
             raise DatabaseError(f"Failed to delete promo code {code}")
+
+    async def get_banners(self) -> List[Dict]:
+        """
+        Fetch all banners ordered by display_order
+
+        Returns:
+            List of banners
+        """
+        try:
+            stmt = self.db.prepare("""
+                SELECT id, name, item_link, image_url, display_order, created_at
+                FROM banners
+                ORDER BY display_order ASC
+            """)
+
+            result = await stmt.all()
+            return extract_results(result)
+        except Exception as e:
+            print(f"Database error in get_banners: {str(e)}")
+            raise DatabaseError("Failed to fetch banners")
+
+    async def get_banner_by_id(self, banner_id: int) -> Optional[Dict]:
+        """
+        Fetch a single banner by ID
+
+        Args:
+            banner_id: Banner ID
+
+        Returns:
+            Banner dictionary or None if not found
+        """
+        try:
+            stmt = self.db.prepare("""
+                SELECT id, name, item_link, image_url, display_order, created_at
+                FROM banners
+                WHERE id = ?
+            """)
+
+            result = await stmt.bind(banner_id).first()
+
+            if not result:
+                return None
+
+            # Convert JS object to Python dict
+            if hasattr(result, 'to_py'):
+                return result.to_py()
+            elif hasattr(result, '_obj'):
+                return dict(result)
+            else:
+                return result
+        except Exception as e:
+            print(f"Database error in get_banner_by_id: {str(e)}")
+            raise DatabaseError(f"Failed to fetch banner {banner_id}")
+
+    async def create_banner(self, banner_data: Dict) -> int:
+        """
+        Create a new banner
+
+        Args:
+            banner_data: Banner data dictionary
+
+        Returns:
+            Created banner ID
+        """
+        try:
+            stmt = self.db.prepare("""
+                INSERT INTO banners (name, item_link, image_url, display_order)
+                VALUES (?, ?, ?, ?)
+            """)
+
+            result = await stmt.bind(
+                banner_data['name'],
+                banner_data['item_link'],
+                banner_data['image_url'],
+                banner_data['display_order']
+            ).run()
+
+            return result.meta.last_row_id
+        except Exception as e:
+            print(f"Database error in create_banner: {str(e)}")
+            raise DatabaseError("Failed to create banner")
+
+    async def update_banner(self, banner_id: int, banner_data: Dict) -> bool:
+        """
+        Update a banner (partial update)
+
+        Args:
+            banner_id: Banner ID
+            banner_data: Fields to update
+
+        Returns:
+            True if updated successfully
+        """
+        try:
+            # Build dynamic UPDATE query
+            fields = []
+            values = []
+
+            if 'name' in banner_data:
+                fields.append("name = ?")
+                values.append(banner_data['name'])
+
+            if 'item_link' in banner_data:
+                fields.append("item_link = ?")
+                values.append(banner_data['item_link'])
+
+            if 'image_url' in banner_data:
+                fields.append("image_url = ?")
+                values.append(banner_data['image_url'])
+
+            if 'display_order' in banner_data:
+                fields.append("display_order = ?")
+                values.append(banner_data['display_order'])
+
+            if not fields:
+                return False
+
+            values.append(banner_id)
+
+            query = f"UPDATE banners SET {', '.join(fields)} WHERE id = ?"
+            stmt = self.db.prepare(query)
+            await stmt.bind(*values).run()
+
+            return True
+        except Exception as e:
+            print(f"Database error in update_banner: {str(e)}")
+            raise DatabaseError(f"Failed to update banner {banner_id}")
+
+    async def delete_banner(self, banner_id: int) -> bool:
+        """
+        Delete a banner
+
+        Args:
+            banner_id: Banner ID
+
+        Returns:
+            True if deleted successfully
+        """
+        try:
+            stmt = self.db.prepare("DELETE FROM banners WHERE id = ?")
+            await stmt.bind(banner_id).run()
+            return True
+        except Exception as e:
+            print(f"Database error in delete_banner: {str(e)}")
+            raise DatabaseError(f"Failed to delete banner {banner_id}")
+
+    async def get_orders_for_date_range(self, start_date: str, end_date: str) -> List[Dict]:
+        """
+        Fetch orders within a date range with parsed order_items
+
+        Args:
+            start_date: Start date in YYYY-MM-DD format
+            end_date: End date in YYYY-MM-DD format
+
+        Returns:
+            List of orders with parsed order_items
+        """
+        try:
+            stmt = self.db.prepare("""
+                SELECT id, customer_name, customer_contact,
+                       delivery_address, delivery_date, order_items, total_price,
+                       promo_code, original_price, discount_amount,
+                       created_at
+                FROM orders
+                WHERE delivery_date BETWEEN ? AND ?
+                ORDER BY delivery_date, customer_name
+            """)
+
+            result = await stmt.bind(start_date, end_date).all()
+            orders = extract_results(result)
+
+            # Parse order_items JSON for each order
+            for order in orders:
+                if order.get('order_items'):
+                    try:
+                        order['order_items'] = json.loads(order['order_items'])
+                    except json.JSONDecodeError:
+                        order['order_items'] = []
+
+            return orders
+        except Exception as e:
+            print(f"Database error in get_orders_for_date_range: {str(e)}")
+            raise DatabaseError("Failed to fetch orders for date range")

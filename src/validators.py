@@ -164,7 +164,7 @@ class MenuValidator:
         'Горячее',
         'Закуски',
         'Канапе',
-        'Салат',
+        'Салаты',
         'Тарталетки'
     ]
 
@@ -247,6 +247,78 @@ class PromoCodeValidator:
             is_valid, msg = OrderValidator.validate_order_items(data['order_items'])
             if not is_valid:
                 errors['order_items'] = msg
+
+        return len(errors) == 0, errors
+
+
+class BannerValidator:
+    """Validator for banner-related data"""
+
+    @staticmethod
+    def validate_url(url: str) -> bool:
+        """
+        Validate URL format
+        Basic validation - checks for http/https and basic structure
+        """
+        if not url:
+            return False
+
+        # Check if starts with http:// or https://
+        if not url.startswith('http://') and not url.startswith('https://'):
+            return False
+
+        # Basic length check
+        if len(url) < 10 or len(url) > 500:
+            return False
+
+        return True
+
+    @staticmethod
+    def validate_banner_data(data: Dict, is_update: bool = False) -> Tuple[bool, Dict]:
+        """
+        Validate banner data
+        is_update: If True, all fields are optional (partial update)
+        Returns: (is_valid, error_details)
+        """
+        errors = {}
+
+        if not is_update:
+            # For creation, these fields are required
+            if not data.get('name'):
+                errors['name'] = "Banner name is required"
+            elif len(data['name']) > 200:
+                errors['name'] = "Banner name must not exceed 200 characters"
+
+            if not data.get('item_link'):
+                errors['item_link'] = "Item link is required"
+            elif not BannerValidator.validate_url(data['item_link']):
+                errors['item_link'] = "Item link must be a valid URL (http:// or https://)"
+
+            if not data.get('image_url'):
+                errors['image_url'] = "Image URL is required"
+            elif not BannerValidator.validate_url(data['image_url']):
+                errors['image_url'] = "Image URL must be a valid URL (http:// or https://)"
+
+            if 'display_order' not in data:
+                errors['display_order'] = "Display order is required"
+            elif not isinstance(data['display_order'], int) or data['display_order'] < 0:
+                errors['display_order'] = "Display order must be a non-negative integer"
+        else:
+            # For update, validate only provided fields
+            if 'name' in data:
+                if not data['name']:
+                    errors['name'] = "Banner name cannot be empty"
+                elif len(data['name']) > 200:
+                    errors['name'] = "Banner name must not exceed 200 characters"
+
+            if 'item_link' in data and not BannerValidator.validate_url(data['item_link']):
+                errors['item_link'] = "Item link must be a valid URL (http:// or https://)"
+
+            if 'image_url' in data and not BannerValidator.validate_url(data['image_url']):
+                errors['image_url'] = "Image URL must be a valid URL (http:// or https://)"
+
+            if 'display_order' in data and (not isinstance(data['display_order'], int) or data['display_order'] < 0):
+                errors['display_order'] = "Display order must be a non-negative integer"
 
         return len(errors) == 0, errors
 

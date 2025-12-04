@@ -123,7 +123,7 @@ def group_menu_by_category(menu_items: list) -> Dict[str, list]:
         'Горячее',
         'Закуски',
         'Канапе',
-        'Салат',
+        'Салаты',
         'Тарталетки'
     ]
 

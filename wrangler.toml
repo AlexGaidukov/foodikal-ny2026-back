@@ -15,6 +15,11 @@ binding = "RATE_LIMIT_KV"
 id = "73445e5e5c454de99b72ab06b6b2d864"
 preview_id = "d452503f49be47ac85b6a1e026fdbdf5"
 
+# Service binding to Excel generator worker
+[[services]]
+binding = "EXCEL_GENERATOR"
+service = "foodikal-ny-excel-generator"
+
 # Secrets are managed via: wrangler secret put <SECRET_NAME>
 # Required secrets:
 # - TELEGRAM_BOT_TOKEN

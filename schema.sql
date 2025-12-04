@@ -37,10 +37,21 @@ CREATE TABLE IF NOT EXISTS promo_codes (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Table 4: Banners
+CREATE TABLE IF NOT EXISTS banners (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    item_link TEXT NOT NULL,
+    image_url TEXT NOT NULL,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_menu_category ON menu_items(category);
 CREATE INDEX IF NOT EXISTS idx_orders_confirmations ON orders(confirmed_after_creation, confirmed_before_delivery);
+CREATE INDEX IF NOT EXISTS idx_banners_display_order ON banners(display_order ASC);
 
 -- Sample menu items (for testing)
 INSERT INTO menu_items (name, category, description, price, image) VALUES

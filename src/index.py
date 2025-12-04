@@ -2,12 +2,13 @@
 Foodikal NY Backend - Main Entry Point
 Python backend for restaurant food ordering system on Cloudflare Workers
 """
-from js import Response, fetch
+from js import Response
 import asyncio
+import json
 
 from database import Database, DatabaseError
 from auth import authenticate_request, AuthenticationError
-from validators import OrderValidator, MenuValidator, PromoCodeValidator, ValidationError
+from validators import OrderValidator, MenuValidator, PromoCodeValidator, BannerValidator, ValidationError
 from telegram import create_notifier
 from rate_limiter import RateLimiter
 from utils import (
@@ -536,6 +537,313 @@ async def handle_delete_promo_code(db: Database, code: str, origin: str = None) 
         return error_response("Failed to delete promo code", 500, origin=origin)
 
 
+async def handle_get_banners(db: Database, origin: str = None) -> Response:
+    """
+    GET /api/banners (public)
+    Returns all banners ordered by display_order
+    """
+    try:
+        banners = await db.get_banners()
+
+        return json_response({
+            "success": True,
+            "count": len(banners),
+            "banners": banners
+        }, origin=origin)
+
+    except DatabaseError as e:
+        log_event("database_error", {"endpoint": "/api/banners", "error": str(e)})
+        return error_response("Failed to fetch banners", 500, origin=origin)
+
+
+async def handle_get_admin_banners(db: Database, origin: str = None) -> Response:
+    """
+    GET /api/admin/banners
+    List all banners (admin only)
+    """
+    try:
+        banners = await db.get_banners()
+
+        return json_response({
+            "success": True,
+            "count": len(banners),
+            "banners": banners
+        }, origin=origin)
+
+    except DatabaseError as e:
+        log_event("database_error", {"endpoint": "/api/admin/banners", "error": str(e)})
+        return error_response("Failed to fetch banners", 500, origin=origin)
+
+
+async def handle_create_banner(request, db: Database, origin: str = None) -> Response:
+    """
+    POST /api/admin/banners
+    Create new banner (admin only)
+    """
+    try:
+        # Parse request body
+        try:
+            data = await parse_request_body(request)
+        except ValueError as e:
+            return error_response(str(e), 400, origin=origin)
+
+        # Validate banner data
+        is_valid, errors = BannerValidator.validate_banner_data(data, is_update=False)
+        if not is_valid:
+            return error_response("Invalid banner data", 400, details=errors, origin=origin)
+
+        # Create banner
+        banner_id = await db.create_banner(data)
+
+        log_event("banner_created", {"banner_id": banner_id, "name": data['name']})
+
+        return json_response({
+            "success": True,
+            "banner_id": banner_id,
+            "message": "Banner created successfully"
+        }, status=201, origin=origin)
+
+    except DatabaseError as e:
+        log_event("database_error", {"endpoint": "/api/admin/banners", "error": str(e)})
+        return error_response("Failed to create banner", 500, origin=origin)
+
+
+async def handle_update_banner(request, db: Database, banner_id: int, origin: str = None) -> Response:
+    """
+    PUT /api/admin/banners/:id
+    Update banner (admin only)
+    """
+    try:
+        # Parse request body
+        try:
+            data = await parse_request_body(request)
+        except ValueError as e:
+            return error_response(str(e), 400, origin=origin)
+
+        # Check if banner exists
+        banner = await db.get_banner_by_id(banner_id)
+        if not banner:
+            return error_response("Banner not found", 404, origin=origin)
+
+        # Validate update data
+        is_valid, errors = BannerValidator.validate_banner_data(data, is_update=True)
+        if not is_valid:
+            return error_response("Invalid banner data", 400, details=errors, origin=origin)
+
+        # Update banner
+        await db.update_banner(banner_id, data)
+
+        log_event("banner_updated", {"banner_id": banner_id})
+
+        # Fetch updated banner
+        updated_banner = await db.get_banner_by_id(banner_id)
+
+        return json_response({
+            "success": True,
+            "message": "Banner updated successfully",
+            "banner": updated_banner
+        }, origin=origin)
+
+    except DatabaseError as e:
+        log_event("database_error", {"endpoint": "/api/admin/banners/:id", "error": str(e)})
+        return error_response("Failed to update banner", 500, origin=origin)
+
+
+async def handle_delete_banner(db: Database, banner_id: int, origin: str = None) -> Response:
+    """
+    DELETE /api/admin/banners/:id
+    Delete banner (admin only)
+    """
+    try:
+        # Check if banner exists
+        banner = await db.get_banner_by_id(banner_id)
+        if not banner:
+            return error_response("Banner not found", 404, origin=origin)
+
+        # Delete banner
+        await db.delete_banner(banner_id)
+
+        log_event("banner_deleted", {"banner_id": banner_id})
+
+        return json_response({
+            "success": True,
+            "message": "Banner deleted successfully"
+        }, origin=origin)
+
+    except DatabaseError as e:
+        log_event("database_error", {"endpoint": "/api/admin/banners/:id", "error": str(e)})
+        return error_response("Failed to delete banner", 500, origin=origin)
+
+
+async def handle_get_weekly_workbook_data(db: Database, origin: str = None) -> Response:
+    """
+    GET /api/admin/weekly_workbook_data
+    Returns aggregated order data for weekly Excel workbook generation (Dec 25-31, 2025)
+    """
+    try:
+        START_DATE = "2025-12-25"
+        END_DATE = "2025-12-31"
+
+        # Fetch orders for the week
+        orders = await db.get_orders_for_date_range(START_DATE, END_DATE)
+
+        # Fetch all menu items
+        menu_items = await db.get_menu_items()
+
+        # Create menu items lookup
+        menu_dict = {item['id']: item for item in menu_items}
+
+        # Extract unique customers
+        customers = sorted(list(set(order['customer_name'] for order in orders)))
+
+        # Aggregate quantities by customer, date, and item_id
+        # Structure: {customer: {date: {item_id: quantity}}}
+        aggregated_data = {}
+
+        for order in orders:
+            customer = order['customer_name']
+            date = order['delivery_date']
+
+            if customer not in aggregated_data:
+                aggregated_data[customer] = {}
+
+            if date not in aggregated_data[customer]:
+                aggregated_data[customer][date] = {}
+
+            # Sum quantities for each item
+            for item in order['order_items']:
+                item_id = item['item_id']
+                quantity = item['quantity']
+
+                if item_id not in aggregated_data[customer][date]:
+                    aggregated_data[customer][date][item_id] = 0
+
+                aggregated_data[customer][date][item_id] += quantity
+
+        # Prepare response data
+        response_data = {
+            "success": True,
+            "date_range": {
+                "start": START_DATE,
+                "end": END_DATE
+            },
+            "customers": customers,
+            "menu_items": menu_items,
+            "orders": orders,
+            "aggregated_data": aggregated_data
+        }
+
+        return json_response(response_data, origin=origin)
+
+    except DatabaseError as e:
+        log_event("database_error", {"endpoint": "/api/admin/weekly_workbook_data", "error": str(e)})
+        return error_response("Failed to fetch weekly workbook data", 500, origin=origin)
+
+    except Exception as e:
+        log_event("unexpected_error", {"endpoint": "/api/admin/weekly_workbook_data", "error": str(e)})
+        return error_response("Internal server error", 500, origin=origin)
+
+
+async def handle_generate_weekly_workbook(db: Database, env, origin: str = None) -> Response:
+    """
+    GET /api/admin/generate_weekly_workbook
+    Generates and returns Excel workbook file for the week (Dec 25-31, 2025)
+    """
+    try:
+        START_DATE = "2025-12-25"
+        END_DATE = "2025-12-31"
+
+        # Fetch orders for the week
+        orders = await db.get_orders_for_date_range(START_DATE, END_DATE)
+
+        # Fetch all menu items
+        menu_items = await db.get_menu_items()
+
+        # Extract unique customers
+        customers = sorted(list(set(order['customer_name'] for order in orders)))
+
+        # Aggregate quantities by customer, date, and item_id
+        aggregated_data = {}
+
+        for order in orders:
+            customer = order['customer_name']
+            date = order['delivery_date']
+
+            if customer not in aggregated_data:
+                aggregated_data[customer] = {}
+
+            if date not in aggregated_data[customer]:
+                aggregated_data[customer][date] = {}
+
+            for item in order['order_items']:
+                item_id = item['item_id']
+                quantity = item['quantity']
+
+                if item_id not in aggregated_data[customer][date]:
+                    aggregated_data[customer][date][item_id] = 0
+
+                aggregated_data[customer][date][item_id] += quantity
+
+        # Prepare data for Excel generator
+        excel_data = {
+            "date_range": {
+                "start": START_DATE,
+                "end": END_DATE
+            },
+            "customers": customers,
+            "menu_items": menu_items,
+            "orders": orders,
+            "aggregated_data": aggregated_data
+        }
+
+        # Call Excel generator worker via service binding
+        excel_generator = getattr(env, 'EXCEL_GENERATOR', None)
+        if not excel_generator:
+            log_event("excel_generator_error", {"error": "Excel generator service not bound"})
+            return error_response("Excel generator service not available", 500, origin=origin)
+
+        # Create request to Excel generator
+        # Import Request from js module
+        from js import Request as JSRequest
+        import pyodide
+        import js
+
+        # Convert Python dict to JavaScript object for request options
+        request_options = pyodide.ffi.to_js({
+            "method": "POST",
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps(excel_data, ensure_ascii=False)
+        }, dict_converter=js.Object.fromEntries)
+
+        excel_request = JSRequest.new("https://dummy.url/generate", request_options)
+
+        # Call Excel generator
+        excel_response = await excel_generator.fetch(excel_request)
+
+        # Check if Excel generation was successful
+        if excel_response.status != 200:
+            error_text = await excel_response.text()
+            log_event("excel_generator_error", {"status": excel_response.status, "error": error_text})
+            return error_response("Excel generation failed", 500, origin=origin)
+
+        log_event("workbook_generated", {
+            "customers_count": len(customers),
+            "orders_count": len(orders)
+        })
+
+        # Return the Excel response directly
+        # The CORS wrapper will add CORS headers if needed
+        return excel_response
+
+    except DatabaseError as e:
+        log_event("database_error", {"endpoint": "/api/admin/generate_weekly_workbook", "error": str(e)})
+        return error_response("Failed to generate workbook", 500, origin=origin)
+
+    except Exception as e:
+        log_event("unexpected_error", {"endpoint": "/api/admin/generate_weekly_workbook", "error": str(e)})
+        return error_response("Internal server error", 500, origin=origin)
+
+
 async def route_request(request, env) -> Response:
     """
     Main request router
@@ -623,6 +931,19 @@ async def route_request(request, env) -> Response:
 
         return await handle_validate_promo(request, db, origin)
 
+    if method == "GET" and url.endswith("/api/banners"):
+        # Rate limit check for banners API
+        is_allowed, retry_after = await rate_limiter.check_public_api_rate_limit(client_ip)
+        if not is_allowed:
+            return error_response(
+                "Too many requests. Please try again later.",
+                429,
+                details={"retry_after": retry_after},
+                origin=origin
+            )
+
+        return await handle_get_banners(db, origin)
+
     # Admin endpoints - require authentication
     auth_header = request.headers.get("Authorization")
 
@@ -703,6 +1024,37 @@ async def route_request(request, env) -> Response:
     if method == "DELETE" and "/api/admin/promo_codes/" in url:
         code = extract_path_param(url, "/api/admin/promo_codes/", "code")
         return await handle_delete_promo_code(db, code, origin)
+
+    # Admin: Banner management
+    if method == "GET" and url.endswith("/api/admin/banners"):
+        return await handle_get_admin_banners(db, origin)
+
+    if method == "POST" and url.endswith("/api/admin/banners"):
+        return await handle_create_banner(request, db, origin)
+
+    if method == "PUT" and "/api/admin/banners/" in url:
+        banner_id_str = extract_path_param(url, "/api/admin/banners/", "id")
+        try:
+            banner_id = int(banner_id_str)
+            return await handle_update_banner(request, db, banner_id, origin)
+        except ValueError:
+            return error_response("Invalid banner ID", 400, origin=origin)
+
+    if method == "DELETE" and "/api/admin/banners/" in url:
+        banner_id_str = extract_path_param(url, "/api/admin/banners/", "id")
+        try:
+            banner_id = int(banner_id_str)
+            return await handle_delete_banner(db, banner_id, origin)
+        except ValueError:
+            return error_response("Invalid banner ID", 400, origin=origin)
+
+    # Admin: Weekly workbook data (JSON)
+    if method == "GET" and url.endswith("/api/admin/weekly_workbook_data"):
+        return await handle_get_weekly_workbook_data(db, origin)
+
+    # Admin: Generate weekly workbook (Excel file)
+    if method == "GET" and url.endswith("/api/admin/generate_weekly_workbook"):
+        return await handle_generate_weekly_workbook(db, env, origin)
 
     # No route matched
     return error_response("Not found", 404, origin=origin)
