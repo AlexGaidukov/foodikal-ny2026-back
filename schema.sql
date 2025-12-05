@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS orders (
     delivery_date TEXT NOT NULL,
     comments TEXT,
     order_items TEXT NOT NULL,
+    items_subtotal INTEGER DEFAULT 0,
+    delivery_fee INTEGER DEFAULT 0,
     total_price INTEGER NOT NULL,
     promo_code TEXT,
     original_price INTEGER,

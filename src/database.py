@@ -169,9 +169,10 @@ class Database:
             stmt = self.db.prepare("""
                 INSERT INTO orders (
                     customer_name, customer_contact,
-                    delivery_address, delivery_date, comments, order_items, total_price,
+                    delivery_address, delivery_date, comments, order_items,
+                    items_subtotal, delivery_fee, total_price,
                     promo_code, original_price, discount_amount
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)
 
             result = await stmt.bind(
@@ -181,6 +182,8 @@ class Database:
                 order_data['delivery_date'],
                 order_data['comments'],
                 json.dumps(order_data['order_items'], ensure_ascii=False),
+                order_data.get('items_subtotal', 0),
+                order_data.get('delivery_fee', 0),
                 order_data['total_price'],
                 order_data.get('promo_code') or '',
                 order_data.get('original_price') or order_data['total_price'],
@@ -204,7 +207,8 @@ class Database:
         try:
             stmt = self.db.prepare("""
                 SELECT id, customer_name, customer_contact,
-                       delivery_address, delivery_date, comments, order_items, total_price,
+                       delivery_address, delivery_date, comments, order_items,
+                       items_subtotal, delivery_fee, total_price,
                        promo_code, original_price, discount_amount,
                        confirmed_after_creation, confirmed_before_delivery,
                        created_at, updated_at
@@ -241,7 +245,8 @@ class Database:
         try:
             stmt = self.db.prepare("""
                 SELECT id, customer_name, customer_contact,
-                       delivery_address, delivery_date, comments, order_items, total_price,
+                       delivery_address, delivery_date, comments, order_items,
+                       items_subtotal, delivery_fee, total_price,
                        promo_code, original_price, discount_amount,
                        confirmed_after_creation, confirmed_before_delivery,
                        created_at, updated_at
@@ -669,7 +674,8 @@ class Database:
         try:
             stmt = self.db.prepare("""
                 SELECT id, customer_name, customer_contact,
-                       delivery_address, delivery_date, order_items, total_price,
+                       delivery_address, delivery_date, order_items,
+                       items_subtotal, delivery_fee, total_price,
                        promo_code, original_price, discount_amount,
                        created_at
                 FROM orders

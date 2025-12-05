@@ -153,6 +153,10 @@ class OrderValidator:
         if data.get('comments') and len(data['comments']) > 500:
             errors['comments'] = "Comments must not exceed 500 characters"
 
+        if 'apply_delivery_fee' in data:
+            if not isinstance(data['apply_delivery_fee'], bool):
+                errors['apply_delivery_fee'] = "Must be a boolean"
+
         return len(errors) == 0, errors
 
 

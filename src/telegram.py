@@ -56,13 +56,21 @@ class TelegramNotifier:
 {items_str}
 """
 
+        # Add pricing breakdown
+        items_subtotal = order.get('items_subtotal', order['total_price'])
+        delivery_fee = order.get('delivery_fee', 0)
+
+        message += f"\n💵 Стоимость товаров: {items_subtotal} RSD"
+
+        if delivery_fee > 0:
+            message += f"\n🚚 Доставка: {delivery_fee} RSD"
+
         # Add promo code info if applied
         if order.get('promo_code'):
             message += f"\n🎟 Промокод: {order['promo_code']}"
-            message += f"\n💵 Исходная цена: {order.get('original_price', order['total_price'])} RSD"
             message += f"\n🎁 Скидка: -{order.get('discount_amount', 0)} RSD"
 
-        message += f"\n💰 Итого: {order['total_price']} RSD"
+        message += f"\n\n💰 **Итого: {order['total_price']} RSD**"
 
         if order.get('comments'):
             message += f"\n\n💬 Комментарии: {order['comments']}"

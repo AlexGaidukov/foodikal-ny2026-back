@@ -20,7 +20,11 @@ from utils import (
     parse_request_body,
     extract_path_param,
     log_event,
-    handle_cors_preflight
+    handle_cors_preflight,
+    parse_query_params,
+    validate_and_get_date_range,
+    aggregate_order_data,
+    WEEKLY_WORKBOOK_RANGES
 )
 
 
@@ -105,13 +109,26 @@ async def handle_create_order(request, db: Database, telegram_bot_token: str, te
         # Create lookup dictionary
         menu_dict = {item['id']: item for item in menu_items}
 
-        # Calculate original price from database prices
+        # Step 1: Calculate items subtotal from database prices
         try:
-            enriched_items, original_price = calculate_order_total(data['order_items'], menu_dict)
+            enriched_items, items_subtotal = calculate_order_total(data['order_items'], menu_dict)
         except ValueError as e:
             return error_response(str(e), 404, origin=origin)
 
-        # Apply promo code discount if provided
+        # Step 2: Calculate delivery fee
+        delivery_fee = 0
+        apply_delivery_fee = data.get('apply_delivery_fee', False)
+
+        if apply_delivery_fee:
+            # Backend enforces the rule: charge 250 RSD if subtotal < 4000
+            if items_subtotal < 4000:
+                delivery_fee = 250
+            # else: free delivery for orders >= 4000
+
+        # Step 3: Calculate original_price (before promo discount)
+        original_price = items_subtotal + delivery_fee
+
+        # Step 4: Apply promo code discount if provided
         promo_code = None
         discount_amount = 0
 
@@ -135,7 +152,7 @@ async def handle_create_order(request, db: Database, telegram_bot_token: str, te
         if not promo_code:
             total_price = original_price
 
-        # Prepare order data for database
+        # Step 5: Prepare order data for database
         # Convert None to empty string for D1 compatibility in Pyodide
         order_data = {
             'customer_name': data['customer_name'],
@@ -144,6 +161,8 @@ async def handle_create_order(request, db: Database, telegram_bot_token: str, te
             'delivery_date': data['delivery_date'],
             'comments': data.get('comments') or '',
             'order_items': enriched_items,
+            'items_subtotal': items_subtotal,
+            'delivery_fee': delivery_fee,
             'total_price': total_price,
             'promo_code': promo_code,
             'original_price': original_price,
@@ -177,6 +196,8 @@ async def handle_create_order(request, db: Database, telegram_bot_token: str, te
         response_data = {
             "success": True,
             "order_id": order_id,
+            "items_subtotal": items_subtotal,
+            "delivery_fee": delivery_fee,
             "total_price": total_price,
             "message": "Order created successfully"
         }
@@ -675,57 +696,50 @@ async def handle_delete_banner(db: Database, banner_id: int, origin: str = None)
         return error_response("Failed to delete banner", 500, origin=origin)
 
 
-async def handle_get_weekly_workbook_data(db: Database, origin: str = None) -> Response:
+async def handle_get_weekly_workbook_data(request, db: Database, origin: str = None) -> Response:
     """
-    GET /api/admin/weekly_workbook_data
-    Returns aggregated order data for weekly Excel workbook generation (Dec 25-31, 2025)
+    GET /api/admin/weekly_workbook_data?range=first_half|second_half
+    Returns aggregated order data for weekly Excel workbook generation
+
+    Query Parameters:
+        range (optional): Date range preset
+            - 'first_half': Dec 25-28, 2025
+            - 'second_half': Dec 29-31, 2025
+            - omitted: Full week (Dec 25-31, 2025)
     """
     try:
-        START_DATE = "2025-12-25"
-        END_DATE = "2025-12-31"
+        # Parse query parameters
+        query_params = parse_query_params(request.url)
 
-        # Fetch orders for the week
-        orders = await db.get_orders_for_date_range(START_DATE, END_DATE)
+        # Validate and get date range
+        try:
+            start_date, end_date, range_name = validate_and_get_date_range(
+                query_params.get('range')
+            )
+        except ValueError as e:
+            return error_response(str(e), 400, origin=origin)
+
+        # Fetch orders for the full week (more efficient than multiple queries)
+        orders = await db.get_orders_for_date_range(
+            WEEKLY_WORKBOOK_RANGES['full_week']['start'],
+            WEEKLY_WORKBOOK_RANGES['full_week']['end']
+        )
 
         # Fetch all menu items
         menu_items = await db.get_menu_items()
 
-        # Create menu items lookup
-        menu_dict = {item['id']: item for item in menu_items}
-
-        # Extract unique customers
-        customers = sorted(list(set(order['customer_name'] for order in orders)))
-
-        # Aggregate quantities by customer, date, and item_id
-        # Structure: {customer: {date: {item_id: quantity}}}
-        aggregated_data = {}
-
-        for order in orders:
-            customer = order['customer_name']
-            date = order['delivery_date']
-
-            if customer not in aggregated_data:
-                aggregated_data[customer] = {}
-
-            if date not in aggregated_data[customer]:
-                aggregated_data[customer][date] = {}
-
-            # Sum quantities for each item
-            for item in order['order_items']:
-                item_id = item['item_id']
-                quantity = item['quantity']
-
-                if item_id not in aggregated_data[customer][date]:
-                    aggregated_data[customer][date][item_id] = 0
-
-                aggregated_data[customer][date][item_id] += quantity
+        # Aggregate data with date filtering
+        customers, aggregated_data = aggregate_order_data(
+            orders, start_date, end_date
+        )
 
         # Prepare response data
         response_data = {
             "success": True,
             "date_range": {
-                "start": START_DATE,
-                "end": END_DATE
+                "start": start_date,
+                "end": end_date,
+                "preset": range_name
             },
             "customers": customers,
             "menu_items": menu_items,
@@ -744,51 +758,46 @@ async def handle_get_weekly_workbook_data(db: Database, origin: str = None) -> R
         return error_response("Internal server error", 500, origin=origin)
 
 
-async def handle_generate_weekly_workbook(db: Database, env, origin: str = None) -> Response:
+async def handle_generate_weekly_workbook(request, db: Database, env, origin: str = None) -> Response:
     """
-    GET /api/admin/generate_weekly_workbook
-    Generates and returns Excel workbook file for the week (Dec 25-31, 2025)
+    GET /api/admin/generate_weekly_workbook?range=first_half|second_half
+    Generates and returns Excel workbook file for the specified date range
+
+    Query Parameters:
+        range (optional): Date range preset (first_half, second_half, or full week)
     """
     try:
-        START_DATE = "2025-12-25"
-        END_DATE = "2025-12-31"
+        # Parse query parameters
+        query_params = parse_query_params(request.url)
 
-        # Fetch orders for the week
-        orders = await db.get_orders_for_date_range(START_DATE, END_DATE)
+        # Validate and get date range
+        try:
+            start_date, end_date, range_name = validate_and_get_date_range(
+                query_params.get('range')
+            )
+        except ValueError as e:
+            return error_response(str(e), 400, origin=origin)
+
+        # Fetch orders for the full week (more efficient than multiple queries)
+        orders = await db.get_orders_for_date_range(
+            WEEKLY_WORKBOOK_RANGES['full_week']['start'],
+            WEEKLY_WORKBOOK_RANGES['full_week']['end']
+        )
 
         # Fetch all menu items
         menu_items = await db.get_menu_items()
 
-        # Extract unique customers
-        customers = sorted(list(set(order['customer_name'] for order in orders)))
-
-        # Aggregate quantities by customer, date, and item_id
-        aggregated_data = {}
-
-        for order in orders:
-            customer = order['customer_name']
-            date = order['delivery_date']
-
-            if customer not in aggregated_data:
-                aggregated_data[customer] = {}
-
-            if date not in aggregated_data[customer]:
-                aggregated_data[customer][date] = {}
-
-            for item in order['order_items']:
-                item_id = item['item_id']
-                quantity = item['quantity']
-
-                if item_id not in aggregated_data[customer][date]:
-                    aggregated_data[customer][date][item_id] = 0
-
-                aggregated_data[customer][date][item_id] += quantity
+        # Aggregate data with date filtering
+        customers, aggregated_data = aggregate_order_data(
+            orders, start_date, end_date
+        )
 
         # Prepare data for Excel generator
         excel_data = {
             "date_range": {
-                "start": START_DATE,
-                "end": END_DATE
+                "start": start_date,
+                "end": end_date,
+                "preset": range_name
             },
             "customers": customers,
             "menu_items": menu_items,
@@ -828,7 +837,8 @@ async def handle_generate_weekly_workbook(db: Database, env, origin: str = None)
 
         log_event("workbook_generated", {
             "customers_count": len(customers),
-            "orders_count": len(orders)
+            "orders_count": len(orders),
+            "date_range": range_name
         })
 
         # Return the Excel response directly
@@ -1049,12 +1059,12 @@ async def route_request(request, env) -> Response:
             return error_response("Invalid banner ID", 400, origin=origin)
 
     # Admin: Weekly workbook data (JSON)
-    if method == "GET" and url.endswith("/api/admin/weekly_workbook_data"):
-        return await handle_get_weekly_workbook_data(db, origin)
+    if method == "GET" and "/api/admin/weekly_workbook_data" in url:
+        return await handle_get_weekly_workbook_data(request, db, origin)
 
     # Admin: Generate weekly workbook (Excel file)
-    if method == "GET" and url.endswith("/api/admin/generate_weekly_workbook"):
-        return await handle_generate_weekly_workbook(db, env, origin)
+    if method == "GET" and "/api/admin/generate_weekly_workbook" in url:
+        return await handle_generate_weekly_workbook(request, db, env, origin)
 
     # No route matched
     return error_response("Not found", 404, origin=origin)
