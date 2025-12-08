@@ -24,6 +24,29 @@ class TelegramNotifier:
         self.chat_id = chat_id
         self.api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
 
+    @staticmethod
+    def escape_markdown(text: str) -> str:
+        """
+        Escape special Markdown characters to prevent formatting issues
+
+        Args:
+            text: Text that may contain special characters
+
+        Returns:
+            Text with escaped Markdown characters
+        """
+        if not text:
+            return text
+
+        # Characters that need escaping in Telegram Markdown
+        special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+
+        escaped_text = text
+        for char in special_chars:
+            escaped_text = escaped_text.replace(char, f'\\{char}')
+
+        return escaped_text
+
     def format_order_message(self, order: Dict) -> str:
         """
         Format order data as Telegram message with emoji markers
@@ -34,22 +57,28 @@ class TelegramNotifier:
         Returns:
             Formatted message string
         """
-        # Format order items
+        # Format order items (escape item names to prevent Markdown issues)
         items_text = []
         for item in order.get('order_items', []):
             item_total = item['price'] * item['quantity']
+            escaped_name = self.escape_markdown(item['name'])
             items_text.append(
-                f"• {item['name']} x{item['quantity']} ({item_total} RSD)"
+                f"• {escaped_name} x{item['quantity']} ({item_total} RSD)"
             )
 
         items_str = "\n".join(items_text)
 
+        # Escape user-provided fields to prevent Markdown formatting issues
+        customer_name = self.escape_markdown(order['customer_name'])
+        customer_contact = self.escape_markdown(order['customer_contact'])
+        delivery_address = self.escape_markdown(order['delivery_address'])
+
         # Build message
         message = f"""🍽 **Новый заказ #{order['id']}**
 
-👤 Имя: {order['customer_name']}
-📞 Контакт: {order['customer_contact']}
-📍 Адрес доставки: {order['delivery_address']}
+👤 Имя: {customer_name}
+📞 Контакт: {customer_contact}
+📍 Адрес доставки: {delivery_address}
 📅 Дата доставки: {order.get('delivery_date', 'Не указана')}
 
 📦 Товары:
@@ -67,13 +96,15 @@ class TelegramNotifier:
 
         # Add promo code info if applied
         if order.get('promo_code'):
-            message += f"\n🎟 Промокод: {order['promo_code']}"
+            escaped_promo = self.escape_markdown(order['promo_code'])
+            message += f"\n🎟 Промокод: {escaped_promo}"
             message += f"\n🎁 Скидка: -{order.get('discount_amount', 0)} RSD"
 
         message += f"\n\n💰 **Итого: {order['total_price']} RSD**"
 
         if order.get('comments'):
-            message += f"\n\n💬 Комментарии: {order['comments']}"
+            escaped_comments = self.escape_markdown(order['comments'])
+            message += f"\n\n💬 Комментарии: {escaped_comments}"
 
         # Add timestamp
         created_at = order.get('created_at', datetime.utcnow().isoformat())
