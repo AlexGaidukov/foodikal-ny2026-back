@@ -365,8 +365,9 @@ class Database:
 
             return result.meta.last_row_id
         except Exception as e:
-            print(f"Database error in create_menu_item: {str(e)}")
-            raise DatabaseError("Failed to create menu item")
+            error_msg = f"Database error in create_menu_item: {str(e)}"
+            print(error_msg)
+            raise DatabaseError(error_msg)
 
     async def update_menu_item(self, item_id: int, item_data: Dict) -> bool:
         """

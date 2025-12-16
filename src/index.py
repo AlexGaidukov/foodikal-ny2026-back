@@ -407,8 +407,23 @@ async def handle_add_menu_item(request, db: Database, origin: str = None) -> Res
         }, status=201, origin=origin)
 
     except DatabaseError as e:
-        log_event("database_error", {"endpoint": "/api/admin/menu_add", "error": str(e)})
-        return error_response("Failed to create menu item", 500, origin=origin)
+        error_msg = str(e)
+        log_event("database_error", {
+            "endpoint": "/api/admin/menu_add",
+            "error": error_msg,
+            "data": data
+        })
+        return error_response(f"Failed to create menu item: {error_msg}", 500, origin=origin)
+
+    except Exception as e:
+        error_msg = str(e)
+        log_event("unexpected_error", {
+            "endpoint": "/api/admin/menu_add",
+            "error": error_msg,
+            "error_type": type(e).__name__,
+            "data": data
+        })
+        return error_response(f"Unexpected error: {error_msg}", 500, origin=origin)
 
 
 async def handle_update_menu_item(request, db: Database, item_id: int, origin: str = None) -> Response:
