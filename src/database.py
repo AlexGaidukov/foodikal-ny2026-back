@@ -358,9 +358,9 @@ class Database:
             result = await stmt.bind(
                 item_data['name'],
                 item_data['category'],
-                item_data.get('description'),
+                item_data.get('description') or '',
                 item_data['price'],
-                item_data.get('image')
+                item_data.get('image') or ''
             ).run()
 
             return result.meta.last_row_id
