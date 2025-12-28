@@ -91,7 +91,8 @@ class OrderValidator:
     @staticmethod
     def validate_order_items(items: List[Dict]) -> Tuple[bool, str]:
         """
-        Validate order items array
+        Validate order items array (basic validation)
+        Detailed validation for fractional items happens in order creation
         Returns: (is_valid, error_message)
         """
         if not items or len(items) == 0:
@@ -107,11 +108,48 @@ class OrderValidator:
             if 'quantity' not in item:
                 return False, "Each item must have 'quantity' field"
 
-            if not isinstance(item['quantity'], int) or item['quantity'] <= 0:
-                return False, "Quantity must be a positive integer"
+            quantity = item['quantity']
+            # Accept both int and float for quantity
+            if not isinstance(quantity, (int, float)) or quantity <= 0:
+                return False, "Quantity must be a positive number"
 
-            if item['quantity'] > 50:
+            if quantity > 50:
                 return False, "Maximum quantity per item is 50"
+
+        return True, ""
+
+    @staticmethod
+    def validate_item_quantity(quantity: float, menu_item: Dict) -> Tuple[bool, str]:
+        """
+        Validate quantity against menu item constraints
+        Called during order creation when we have menu item data
+
+        Args:
+            quantity: Requested quantity
+            menu_item: Menu item dict with allow_fractional, quantity_step, min_quantity
+
+        Returns: (is_valid, error_message)
+        """
+        allow_fractional = menu_item.get('allow_fractional', False)
+        quantity_step = menu_item.get('quantity_step', 1.0)
+        min_quantity = menu_item.get('min_quantity', 1.0)
+        item_name = menu_item.get('name', f"Item {menu_item.get('id')}")
+
+        # Check minimum quantity
+        if quantity < min_quantity:
+            return False, f"Minimum quantity for '{item_name}' is {min_quantity}"
+
+        if not allow_fractional:
+            # Non-fractional items must have integer quantities
+            if not isinstance(quantity, int) and quantity != int(quantity):
+                return False, f"'{item_name}' does not allow fractional quantities"
+        else:
+            # Fractional items must follow the step
+            # Check if quantity follows the step (e.g., 1.0, 1.5, 2.0 for step 0.5)
+            # Use modulo with tolerance for floating point errors
+            remainder = (quantity - min_quantity) % quantity_step
+            if remainder > 0.001 and remainder < (quantity_step - 0.001):
+                return False, f"Quantity for '{item_name}' must be in increments of {quantity_step}"
 
         return True, ""
 
@@ -207,6 +245,25 @@ class MenuValidator:
 
             if 'price' in data and (not isinstance(data['price'], int) or data['price'] < 0):
                 errors['price'] = "Price must be a non-negative integer"
+
+        # Validate fractional quantity fields (for both create and update)
+        if 'allow_fractional' in data:
+            if not isinstance(data['allow_fractional'], bool):
+                errors['allow_fractional'] = "Must be a boolean"
+
+        if 'quantity_step' in data:
+            step = data['quantity_step']
+            if not isinstance(step, (int, float)) or step <= 0:
+                errors['quantity_step'] = "Must be a positive number"
+
+        if 'min_quantity' in data:
+            min_qty = data['min_quantity']
+            if not isinstance(min_qty, (int, float)) or min_qty <= 0:
+                errors['min_quantity'] = "Must be a positive number"
+
+        if 'unit' in data:
+            if not isinstance(data['unit'], str) or len(data['unit']) > 20:
+                errors['unit'] = "Must be a string up to 20 characters"
 
         return len(errors) == 0, errors
 

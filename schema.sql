@@ -9,6 +9,10 @@ CREATE TABLE IF NOT EXISTS menu_items (
     description TEXT,
     price INTEGER NOT NULL,
     image TEXT,
+    allow_fractional BOOLEAN DEFAULT 0,
+    quantity_step REAL DEFAULT 1.0,
+    min_quantity REAL DEFAULT 1.0,
+    unit TEXT DEFAULT 'шт',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

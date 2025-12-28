@@ -87,13 +87,13 @@ class Database:
             if category:
                 # Get items by category
                 stmt = self.db.prepare(
-                    "SELECT id, name, category, description, price, image FROM menu_items WHERE category = ? ORDER BY name"
+                    "SELECT id, name, category, description, price, image, allow_fractional, quantity_step, min_quantity, unit FROM menu_items WHERE category = ? ORDER BY name"
                 )
                 result = await stmt.bind(category).all()
             else:
                 # Get all items
                 stmt = self.db.prepare(
-                    "SELECT id, name, category, description, price, image FROM menu_items ORDER BY category, name"
+                    "SELECT id, name, category, description, price, image, allow_fractional, quantity_step, min_quantity, unit FROM menu_items ORDER BY category, name"
                 )
                 result = await stmt.all()
 
@@ -114,7 +114,7 @@ class Database:
         """
         try:
             stmt = self.db.prepare(
-                "SELECT id, name, category, description, price, image FROM menu_items WHERE id = ?"
+                "SELECT id, name, category, description, price, image, allow_fractional, quantity_step, min_quantity, unit FROM menu_items WHERE id = ?"
             )
             result = await stmt.bind(item_id).first()
 
@@ -145,7 +145,7 @@ class Database:
         try:
             # Build placeholders for IN clause
             placeholders = ','.join('?' * len(item_ids))
-            query = f"SELECT id, name, category, description, price, image FROM menu_items WHERE id IN ({placeholders})"
+            query = f"SELECT id, name, category, description, price, image, allow_fractional, quantity_step, min_quantity, unit FROM menu_items WHERE id IN ({placeholders})"
 
             stmt = self.db.prepare(query)
             result = await stmt.bind(*item_ids).all()
@@ -351,8 +351,8 @@ class Database:
         """
         try:
             stmt = self.db.prepare("""
-                INSERT INTO menu_items (name, category, description, price, image)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO menu_items (name, category, description, price, image, allow_fractional, quantity_step, min_quantity, unit)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)
 
             result = await stmt.bind(
@@ -360,7 +360,11 @@ class Database:
                 item_data['category'],
                 item_data.get('description') or '',
                 item_data['price'],
-                item_data.get('image') or ''
+                item_data.get('image') or '',
+                1 if item_data.get('allow_fractional') else 0,
+                item_data.get('quantity_step', 1.0),
+                item_data.get('min_quantity', 1.0),
+                item_data.get('unit', 'шт')
             ).run()
 
             return result.meta.last_row_id
@@ -404,6 +408,22 @@ class Database:
             if 'image' in item_data:
                 fields.append("image = ?")
                 values.append(item_data['image'])
+
+            if 'allow_fractional' in item_data:
+                fields.append("allow_fractional = ?")
+                values.append(1 if item_data['allow_fractional'] else 0)
+
+            if 'quantity_step' in item_data:
+                fields.append("quantity_step = ?")
+                values.append(item_data['quantity_step'])
+
+            if 'min_quantity' in item_data:
+                fields.append("min_quantity = ?")
+                values.append(item_data['min_quantity'])
+
+            if 'unit' in item_data:
+                fields.append("unit = ?")
+                values.append(item_data['unit'])
 
             if not fields:
                 return False

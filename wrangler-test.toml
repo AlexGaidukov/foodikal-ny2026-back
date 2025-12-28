@@ -1,0 +1,4 @@
+name = "excel-test"
+main = "excel-test.js"
+compatibility_date = "2025-01-07"
+compatibility_flags = ["nodejs_compat"]

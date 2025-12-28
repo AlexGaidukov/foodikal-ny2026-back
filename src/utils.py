@@ -2,8 +2,8 @@
 Utility functions for Foodikal NY Backend
 """
 import json
-from typing import Dict, Any, Optional
-from urllib.parse import unquote
+from typing import Dict, Any, Optional, List
+from urllib.parse import unquote, urlparse, parse_qs
 from js import Response as JSResponse
 
 
@@ -12,6 +12,27 @@ ALLOWED_ORIGINS = [
     'https://ny2026.foodikal.rs',
     'https://foodikal.rs'
 ]
+
+# Date range presets for weekly workbook generation
+WEEKLY_WORKBOOK_RANGES = {
+    'full_week': {
+        'start': '2025-12-25',
+        'end': '2025-12-31',
+        'description': 'Full week (Dec 25-31)'
+    },
+    'first_half': {
+        'start': '2025-12-25',
+        'end': '2025-12-28',
+        'description': 'First half (Thu-Sun, Dec 25-28)'
+    },
+    'second_half': {
+        'start': '2025-12-29',
+        'end': '2025-12-31',
+        'description': 'Second half (Mon-Wed, Dec 29-31)'
+    }
+}
+
+DEFAULT_RANGE = 'full_week'
 
 
 def get_cors_origin(request_origin: Optional[str] = None) -> str:
@@ -144,14 +165,15 @@ def calculate_order_total(order_items: list, menu_items_dict: Dict[int, Dict]) -
     CRITICAL: Never trust client prices - always fetch from database
 
     Args:
-        order_items: List of order items with item_id and quantity
+        order_items: List of order items with item_id and quantity (can be float for fractional items)
         menu_items_dict: Dictionary of menu items keyed by ID
 
     Returns:
         Tuple of (enriched_items, total_price)
-        enriched_items includes name and price from database
+        enriched_items includes name, price, and unit from database
+        total_price is rounded to integer (RSD)
     """
-    total = 0
+    total = 0.0
     enriched_items = []
 
     for item in order_items:
@@ -163,21 +185,27 @@ def calculate_order_total(order_items: list, menu_items_dict: Dict[int, Dict]) -
         if not menu_item:
             raise ValueError(f"Menu item {item_id} not found")
 
-        # Calculate item total
+        # Calculate item total (handle float quantities)
         price = menu_item['price']
         item_total = price * quantity
 
-        # Create enriched item
-        enriched_items.append({
+        # Create enriched item with unit info
+        enriched_item = {
             'item_id': item_id,
             'name': menu_item['name'],
             'quantity': quantity,
             'price': price
-        })
+        }
 
+        # Include unit if item supports fractional quantities
+        if menu_item.get('allow_fractional'):
+            enriched_item['unit'] = menu_item.get('unit', 'кг')
+
+        enriched_items.append(enriched_item)
         total += item_total
 
-    return enriched_items, total
+    # Round total to integer (RSD doesn't have fractional units)
+    return enriched_items, int(round(total))
 
 
 async def parse_request_body(request) -> Dict:
@@ -271,3 +299,130 @@ def handle_cors_preflight(origin: str = None):
             }
         }
     )
+
+
+def parse_query_params(url: str) -> Dict[str, str]:
+    """
+    Parse query parameters from URL
+
+    Args:
+        url: Full request URL (e.g., "https://example.com/api/endpoint?range=first_half")
+
+    Returns:
+        Dictionary of query parameters
+
+    Example:
+        >>> parse_query_params("https://api.com/path?range=first_half&foo=bar")
+        {'range': 'first_half', 'foo': 'bar'}
+    """
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+
+    # Convert lists to single values (take first value)
+    return {key: values[0] if values else '' for key, values in params.items()}
+
+
+def validate_and_get_date_range(range_param: Optional[str] = None) -> tuple:
+    """
+    Validate range parameter and return date range tuple
+
+    Args:
+        range_param: Range parameter from query string (e.g., 'first_half', 'second_half')
+                     If None or empty, returns default full week range
+
+    Returns:
+        Tuple of (start_date, end_date, range_name) as strings
+
+    Raises:
+        ValueError: If range_param is invalid
+
+    Example:
+        >>> validate_and_get_date_range('first_half')
+        ('2025-12-25', '2025-12-28', 'first_half')
+    """
+    # Default to full week if no parameter provided
+    if not range_param:
+        range_param = DEFAULT_RANGE
+
+    # Validate range exists
+    if range_param not in WEEKLY_WORKBOOK_RANGES:
+        valid_ranges = ', '.join(WEEKLY_WORKBOOK_RANGES.keys())
+        raise ValueError(
+            f"Invalid range parameter: '{range_param}'. "
+            f"Valid values: {valid_ranges}"
+        )
+
+    range_config = WEEKLY_WORKBOOK_RANGES[range_param]
+    return (
+        range_config['start'],
+        range_config['end'],
+        range_param
+    )
+
+
+def aggregate_order_data(orders: List[Dict], start_date: str, end_date: str) -> tuple:
+    """
+    Aggregate order quantities by customer, date, and item_id
+    Filters data to only include dates within the specified range
+
+    Args:
+        orders: List of order dictionaries from database
+        start_date: Start of date range (YYYY-MM-DD)
+        end_date: End of date range (YYYY-MM-DD)
+
+    Returns:
+        Tuple of (customers_list, aggregated_data_dict)
+
+        customers_list: Sorted list of customer names (only those with orders in range)
+        aggregated_data_dict: {customer: {date: {item_id: quantity}}}
+
+    Example:
+        orders = [
+            {
+                'customer_name': 'John',
+                'delivery_date': '2025-12-25',
+                'order_items': [{'item_id': 1, 'quantity': 2}]
+            },
+            {
+                'customer_name': 'John',
+                'delivery_date': '2025-12-29',
+                'order_items': [{'item_id': 1, 'quantity': 3}]
+            }
+        ]
+
+        # First half range
+        customers, data = aggregate_order_data(orders, '2025-12-25', '2025-12-28')
+        # Returns: (['John'], {'John': {'2025-12-25': {1: 2}}})
+        # Note: Dec 29 order excluded (outside range)
+    """
+    aggregated_data = {}
+
+    for order in orders:
+        customer = order['customer_name']
+        date = order['delivery_date']
+
+        # CRITICAL: Skip orders outside the date range
+        # This ensures only relevant dates are included
+        if date < start_date or date > end_date:
+            continue
+
+        if customer not in aggregated_data:
+            aggregated_data[customer] = {}
+
+        if date not in aggregated_data[customer]:
+            aggregated_data[customer][date] = {}
+
+        # Sum quantities for each item
+        for item in order['order_items']:
+            item_id = item['item_id']
+            quantity = item['quantity']
+
+            if item_id not in aggregated_data[customer][date]:
+                aggregated_data[customer][date][item_id] = 0
+
+            aggregated_data[customer][date][item_id] += quantity
+
+    # Extract unique customers (only those with orders in date range)
+    customers = sorted(list(aggregated_data.keys()))
+
+    return customers, aggregated_data

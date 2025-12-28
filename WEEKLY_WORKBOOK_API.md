@@ -65,7 +65,10 @@ The Weekly Workbook API generates comprehensive Excel reports for order data dur
 
 **Response:**
 - **Content-Type:** `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
-- **Filename:** `Заказы_фуршет_нг.xlsx`
+- **Filename:** Dynamic based on range parameter:
+  - `first_half` → `Заказы_нг_фуршет_25-28.xlsx`
+  - `second_half` → `Заказы_нг_фуршет_29-31.xlsx`
+  - `full_week` (or omitted) → `Заказы_фуршет_нг.xlsx`
 - **Binary Excel file download**
 
 **Example Usage:**
@@ -96,6 +99,110 @@ curl -X GET \
   "https://foodikal-ny-backend.x-gs-x.workers.dev/api/admin/generate_weekly_workbook" \
   -H "Authorization: Bearer YOUR_PASSWORD" \
   -o "Заказы_фуршет_нг.xlsx"
+```
+
+## Query Parameters
+
+Both endpoints support an optional `range` query parameter to filter orders by date:
+
+**Parameter:** `range`
+**Type:** String (optional)
+**Values:**
+- `first_half` - December 25-28, 2025 (Thursday-Sunday)
+- `second_half` - December 29-31, 2025 (Monday-Wednesday)
+- (omitted) - Full week, December 25-31, 2025 (default)
+
+### Examples
+
+**Get first half data (Dec 25-28):**
+```bash
+# JSON endpoint
+curl -X GET \
+  "https://foodikal-ny-backend.x-gs-x.workers.dev/api/admin/weekly_workbook_data?range=first_half" \
+  -H "Authorization: Bearer YOUR_PASSWORD"
+
+# Excel file (automatically named Заказы_нг_фуршет_25-28.xlsx)
+curl -X GET \
+  "https://foodikal-ny-backend.x-gs-x.workers.dev/api/admin/generate_weekly_workbook?range=first_half" \
+  -H "Authorization: Bearer YOUR_PASSWORD" \
+  -O
+```
+
+**Get second half data (Dec 29-31):**
+```bash
+# JSON endpoint
+curl -X GET \
+  "https://foodikal-ny-backend.x-gs-x.workers.dev/api/admin/weekly_workbook_data?range=second_half" \
+  -H "Authorization: Bearer YOUR_PASSWORD"
+
+# Excel file (automatically named Заказы_нг_фуршет_29-31.xlsx)
+curl -X GET \
+  "https://foodikal-ny-backend.x-gs-x.workers.dev/api/admin/generate_weekly_workbook?range=second_half" \
+  -H "Authorization: Bearer YOUR_PASSWORD" \
+  -O
+```
+
+**Get full week (same as no parameter):**
+```bash
+# Both of these return the full week
+curl "https://foodikal-ny-backend.x-gs-x.workers.dev/api/admin/weekly_workbook_data" \
+  -H "Authorization: Bearer YOUR_PASSWORD"
+
+curl "https://foodikal-ny-backend.x-gs-x.workers.dev/api/admin/weekly_workbook_data?range=full_week" \
+  -H "Authorization: Bearer YOUR_PASSWORD"
+```
+
+### Client Filtering
+
+**Important:** The `range` parameter filters both dates AND customers:
+
+- **Only customers with orders in the selected date range are included**
+- If a customer has orders in both ranges, they appear separately in each range's output
+- Excel files always show all 7 weekday columns; excluded dates display 0 or blank
+
+**Example:**
+
+John places two orders:
+- Order 1: Dec 25 (Thursday) - 5 items
+- Order 2: Dec 29 (Monday) - 3 items
+
+**Result:**
+- `?range=first_half`: John appears with only Dec 25-28 orders (5 items on Thu, 0 on Mon-Wed)
+- `?range=second_half`: John appears with only Dec 29-31 orders (0 on Thu-Sun, 3 items on Mon)
+- No parameter: John appears with all orders (5 items on Thu, 3 items on Mon)
+
+### Response Changes
+
+The `date_range` object now includes a `preset` field:
+
+```json
+{
+  "success": true,
+  "date_range": {
+    "start": "2025-12-25",
+    "end": "2025-12-28",
+    "preset": "first_half"
+  },
+  "customers": ["Company A", "Company B"],
+  "aggregated_data": { ... }
+}
+```
+
+### Error Handling
+
+**Invalid range values return 400 Bad Request:**
+
+```bash
+curl "https://foodikal-ny-backend.x-gs-x.workers.dev/api/admin/weekly_workbook_data?range=invalid" \
+  -H "Authorization: Bearer YOUR_PASSWORD"
+```
+
+**Response:**
+```json
+{
+  "success": false,
+  "error": "Invalid range parameter: 'invalid'. Valid values: full_week, first_half, second_half"
+}
 ```
 
 ## Excel Workbook Structure
@@ -244,7 +351,8 @@ service = "foodikal-ny-excel-generator"
 
 ## Limitations
 
-- **Fixed Date Range:** December 25-31, 2025 (hardcoded)
+- **Preset Date Ranges:** Only supports three presets (full week, first half, second half) for December 25-31, 2025
+- **No Custom Dates:** Cannot specify arbitrary date ranges
 - **No Pagination:** All data loaded at once
 - **Memory:** Large customer counts may approach worker memory limits
 - **File Size:** Workbooks with 50+ customers may be 5-10 MB
@@ -252,8 +360,8 @@ service = "foodikal-ny-excel-generator"
 ## Future Enhancements
 
 Possible improvements:
-1. Configurable date ranges
-2. Customer filtering options
+1. Custom date ranges (arbitrary start/end dates)
+2. Customer filtering options  (include/exclude specific customers)
 3. Additional sheet types
 4. Custom formatting options
 5. Email delivery of workbooks

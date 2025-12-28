@@ -30,7 +30,8 @@ export default {
 			const data = await request.json();
 			console.log('Received data:', {
 				menuItemsCount: data.menu_items?.length,
-				ordersCount: data.orders?.length
+				ordersCount: data.orders?.length,
+				dateRangePreset: data.date_range?.preset
 			});
 
 			// Generate Excel workbook
@@ -40,12 +41,24 @@ export default {
 			const buffer = await workbook.xlsx.writeBuffer();
 			console.log('Excel buffer generated, size:', buffer.byteLength);
 
+			// Determine filename based on date range preset
+			const preset = data.date_range?.preset || 'full_week';
+			const filenameMap = {
+				'first_half': 'Заказы_нг_фуршет_25-28.xlsx',
+				'second_half': 'Заказы_нг_фуршет_29-31.xlsx',
+				'full_week': 'Заказы_фуршет_нг.xlsx'
+			};
+			const filename = filenameMap[preset] || 'Заказы_фуршет_нг.xlsx';
+
+			// Encode filename for HTTP header (RFC 2231)
+			const encodedFilename = encodeURIComponent(filename);
+
 			// Return Excel file
 			return new Response(buffer, {
 				status: 200,
 				headers: {
 					'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-					'Content-Disposition': 'attachment; filename="Заказы_фуршет_нг.xlsx"',
+					'Content-Disposition': `attachment; filename*=UTF-8''${encodedFilename}`,
 					'Content-Length': buffer.byteLength.toString(),
 					'Access-Control-Allow-Origin': '*',
 				},

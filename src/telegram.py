@@ -38,8 +38,10 @@ class TelegramNotifier:
         if not text:
             return text
 
-        # Characters that need escaping in Telegram Markdown
-        special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+        # Characters that need escaping in Telegram's legacy Markdown mode
+        # Only: _ * ` [
+        # Note: () and other chars are only special in MarkdownV2, not in legacy Markdown
+        special_chars = ['_', '*', '`', '[']
 
         escaped_text = text
         for char in special_chars:

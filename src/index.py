@@ -109,6 +109,16 @@ async def handle_create_order(request, db: Database, telegram_bot_token: str, te
         # Create lookup dictionary
         menu_dict = {item['id']: item for item in menu_items}
 
+        # Validate item quantities against menu item constraints
+        for item in data['order_items']:
+            menu_item = menu_dict.get(item['item_id'])
+            if menu_item:
+                is_valid, error_msg = OrderValidator.validate_item_quantity(
+                    item['quantity'], menu_item
+                )
+                if not is_valid:
+                    return error_response(error_msg, 400, origin=origin)
+
         # Step 1: Calculate items subtotal from database prices
         try:
             enriched_items, items_subtotal = calculate_order_total(data['order_items'], menu_dict)
@@ -245,6 +255,16 @@ async def handle_validate_promo(request, db: Database, origin: str = None) -> Re
 
         # Create lookup dictionary
         menu_dict = {item['id']: item for item in menu_items}
+
+        # Validate item quantities against menu item constraints
+        for item in data['order_items']:
+            menu_item = menu_dict.get(item['item_id'])
+            if menu_item:
+                is_valid, error_msg = OrderValidator.validate_item_quantity(
+                    item['quantity'], menu_item
+                )
+                if not is_valid:
+                    return error_response(error_msg, 400, origin=origin)
 
         # Calculate subtotal from database prices
         try:
