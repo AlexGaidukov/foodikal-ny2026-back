@@ -2,8 +2,8 @@
 Rate limiting module for Foodikal NY Backend
 Uses Cloudflare Workers KV for distributed rate limit tracking
 """
-import time
 from typing import Optional, Tuple
+from js import Date
 
 
 class RateLimitExceeded(Exception):
@@ -49,7 +49,9 @@ class RateLimiter:
             # Get current count and timestamp from KV
             value = await self.kv.get(rate_key)
 
-            current_time = int(time.time())
+            # Use JavaScript Date.now() for current timestamp (milliseconds since epoch)
+            # Convert to seconds to match Python time.time() behavior
+            current_time = int(Date.now() / 1000)
 
             if value:
                 # Parse stored value: "count:timestamp"
